@@ -1,0 +1,43 @@
+# Binaries
+/opentide
+/tide-cli
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+coverage.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Docker
+docker-compose.override.yml
+
+# Build
+/dist/
+/bin/
+
+.gstack

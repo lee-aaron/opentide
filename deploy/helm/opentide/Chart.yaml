@@ -1,0 +1,19 @@
+apiVersion: v2
+name: opentide
+description: Security-first AI agent platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/opentide/opentide
+sources:
+  - https://github.com/opentide/opentide
+maintainers:
+  - name: opentide
+    url: https://github.com/opentide
+keywords:
+  - ai
+  - agents
+  - security
+  - llm
+  - discord
+  - slack

@@ -1,0 +1,46 @@
+# DigitalOcean App Platform Specification
+# Deploy: doctl apps create --spec deploy/app-platform/app.yaml
+#
+# Required environment variables (set in DO App Platform dashboard):
+#   ANTHROPIC_API_KEY or OPENAI_API_KEY or DO_GRADIENT_API_KEY
+#   DISCORD_TOKEN
+#   DATABASE_URL (auto-set when attaching a managed database)
+
+name: opentide
+
+services:
+  - name: gateway
+    github:
+      repo: opentide/opentide
+      branch: main
+      deploy_on_push: true
+    build_command: go build -ldflags="-s -w" -o opentide ./cmd/opentide
+    run_command: ./opentide --config opentide.yaml
+    environment_slug: go
+    instance_count: 1
+    instance_size_slug: professional-xs
+    http_port: 8080
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+    envs:
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: OPENAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_GRADIENT_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: DISCORD_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+
+databases:
+  - name: opentide-db
+    engine: PG
+    version: "16"
+    size: db-s-dev-database
+    num_nodes: 1

@@ -1,0 +1,31 @@
+name: web-search
+version: 0.1.0
+description: Search the web using Brave Search API and return summarized results
+author: opentide
+license: Apache-2.0
+
+security:
+  egress:
+    - "api.search.brave.com:443"
+  filesystem: read-only
+  max_memory: 128Mi
+  max_cpu: "0.5"
+  timeout: 30s
+
+triggers:
+  tool_name: web_search
+  keywords:
+    - search
+    - look up
+    - find online
+
+config:
+  - name: Brave Search API Key
+    env_var: BRAVE_API_KEY
+    required: true
+    secret: true
+
+runtime:
+  image: opentide/skill-web-search:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill

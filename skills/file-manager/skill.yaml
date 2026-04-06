@@ -1,0 +1,25 @@
+name: file-manager
+version: 0.1.0
+description: Read and write files in the skill's sandboxed tmpfs workspace
+author: opentide
+license: Apache-2.0
+
+security:
+  egress: []
+  filesystem: read-write
+  max_memory: 64Mi
+  max_cpu: "0.25"
+  timeout: 15s
+
+triggers:
+  tool_name: file_manager
+  keywords:
+    - save file
+    - read file
+    - write file
+    - list files
+
+runtime:
+  image: opentide/skill-file-manager:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill

@@ -1,0 +1,102 @@
+# OpenTide Helm Chart Values
+
+replicaCount: 1
+
+image:
+  repository: opentide/opentide
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# LLM Provider configuration (set at least one)
+providers:
+  anthropic:
+    apiKey: ""    # or use existingSecret
+  openai:
+    apiKey: ""
+  gradient:
+    apiKey: ""
+
+# Messaging adapter (set at least one)
+adapters:
+  discord:
+    token: ""
+  slack:
+    botToken: ""
+    appToken: ""
+
+# Use existing Kubernetes secrets instead of plain values
+existingSecrets:
+  providers: ""    # secret name containing API keys
+  adapters: ""     # secret name containing adapter tokens
+
+# Gateway configuration
+gateway:
+  port: 8080
+  logLevel: info
+  demoMode: false
+  devMode: false
+
+# State store
+state:
+  driver: postgres    # "postgres" or "memory"
+
+# Skill registry (optional)
+registry:
+  enabled: false
+  port: 8081
+
+# PostgreSQL (using Bitnami subchart or external)
+postgresql:
+  enabled: true
+  auth:
+    database: opentide
+    username: opentide
+    existingSecret: ""
+  primary:
+    persistence:
+      size: 5Gi
+
+# External database (if postgresql.enabled=false)
+externalDatabase:
+  url: ""
+
+# Resource limits
+resources:
+  limits:
+    cpu: "1"
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 128Mi
+
+# Health check
+healthCheck:
+  path: /health
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+# Service
+service:
+  type: ClusterIP
+  port: 8080
+
+# Ingress (optional)
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+# Pod security
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
