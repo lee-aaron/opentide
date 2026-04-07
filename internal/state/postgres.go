@@ -49,6 +49,7 @@ func (s *PostgresStore) migrate(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_conversations_channel_id ON conversations(channel_id, created_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS audit_log (
 			id         BIGSERIAL PRIMARY KEY,
 			event_type TEXT NOT NULL,
@@ -85,7 +86,7 @@ func (s *PostgresStore) SaveMessage(ctx context.Context, entry ConversationEntry
 	return err
 }
 
-func (s *PostgresStore) GetHistory(ctx context.Context, userID string, limit int) ([]ConversationEntry, error) {
+func (s *PostgresStore) GetHistory(ctx context.Context, channelID string, limit int) ([]ConversationEntry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -93,10 +94,10 @@ func (s *PostgresStore) GetHistory(ctx context.Context, userID string, limit int
 	rows, err := s.pool.Query(ctx,
 		`SELECT user_id, channel_id, role, content, tool_call_id, created_at
 		 FROM conversations
-		 WHERE user_id = $1
+		 WHERE channel_id = $1
 		 ORDER BY created_at DESC
 		 LIMIT $2`,
-		userID, limit,
+		channelID, limit,
 	)
 	if err != nil {
 		return nil, err

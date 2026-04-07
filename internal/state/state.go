@@ -18,16 +18,17 @@ type ConversationEntry struct {
 }
 
 // Store is the interface for conversation persistence.
+// History is scoped per channel (DM or server channel) so conversations don't leak across contexts.
 type Store interface {
 	SaveMessage(ctx context.Context, entry ConversationEntry) error
-	GetHistory(ctx context.Context, userID string, limit int) ([]ConversationEntry, error)
+	GetHistory(ctx context.Context, channelID string, limit int) ([]ConversationEntry, error)
 	Close() error
 }
 
 // MemoryStore is an in-memory store for demo/dev mode.
 type MemoryStore struct {
 	mu      sync.RWMutex
-	history map[string][]ConversationEntry // userID -> entries
+	history map[string][]ConversationEntry // channelID -> entries
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -39,15 +40,15 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) SaveMessage(_ context.Context, entry ConversationEntry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.history[entry.UserID] = append(s.history[entry.UserID], entry)
+	s.history[entry.ChannelID] = append(s.history[entry.ChannelID], entry)
 	return nil
 }
 
-func (s *MemoryStore) GetHistory(_ context.Context, userID string, limit int) ([]ConversationEntry, error) {
+func (s *MemoryStore) GetHistory(_ context.Context, channelID string, limit int) ([]ConversationEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	entries := s.history[userID]
+	entries := s.history[channelID]
 	if limit > 0 && len(entries) > limit {
 		entries = entries[len(entries)-limit:]
 	}

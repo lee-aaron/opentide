@@ -120,8 +120,8 @@ func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessag
 		},
 	})
 
-	// Build conversation context
-	history, err := g.store.GetHistory(ctx, msg.UserID, 20)
+	// Build conversation context (scoped per channel for privacy)
+	history, err := g.store.GetHistory(ctx, msg.ChannelID, 20)
 	if err != nil {
 		g.logger.Error("failed to get history", "err", err)
 	}
