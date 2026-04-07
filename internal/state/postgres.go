@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,8 +17,9 @@ type PostgresStore struct {
 	pool *pgxpool.Pool
 }
 
-// NewPostgresStore connects to PostgreSQL and runs migrations.
-func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
+// ConnectPool creates a connection pool, verifies connectivity, and runs migrations.
+// The returned pool can be shared across components (state store, secrets store, etc.).
+func ConnectPool(ctx context.Context, dsn string, logger *slog.Logger) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("postgres connect: %w", err)
@@ -28,48 +30,26 @@ func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
 		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	s := &PostgresStore{pool: pool}
-	if err := s.migrate(ctx); err != nil {
+	if err := Migrate(ctx, pool, logger); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("postgres migrate: %w", err)
 	}
 
-	return s, nil
+	return pool, nil
 }
 
-func (s *PostgresStore) migrate(ctx context.Context) error {
-	migrations := []string{
-		`CREATE TABLE IF NOT EXISTS conversations (
-			id         BIGSERIAL PRIMARY KEY,
-			user_id    TEXT NOT NULL,
-			channel_id TEXT NOT NULL,
-			role       TEXT NOT NULL,
-			content    TEXT NOT NULL,
-			tool_call_id TEXT DEFAULT '',
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id, created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_conversations_channel_id ON conversations(channel_id, created_at DESC)`,
-		`CREATE TABLE IF NOT EXISTS audit_log (
-			id         BIGSERIAL PRIMARY KEY,
-			event_type TEXT NOT NULL,
-			payload    JSONB NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_audit_log_type ON audit_log(event_type, created_at DESC)`,
-		`CREATE TABLE IF NOT EXISTS rate_limits (
-			key        TEXT PRIMARY KEY,
-			tokens     DOUBLE PRECISION NOT NULL,
-			last_fill  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`,
-	}
+// NewPostgresStore creates a PostgresStore using an existing connection pool.
+func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
+	return &PostgresStore{pool: pool}
+}
 
-	for _, m := range migrations {
-		if _, err := s.pool.Exec(ctx, m); err != nil {
-			return fmt.Errorf("migration failed: %w\nSQL: %s", err, m)
-		}
+// NewPostgresStoreFromDSN connects to PostgreSQL, runs migrations, and returns a store.
+func NewPostgresStoreFromDSN(ctx context.Context, dsn string, logger *slog.Logger) (*PostgresStore, error) {
+	pool, err := ConnectPool(ctx, dsn, logger)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	return &PostgresStore{pool: pool}, nil
 }
 
 func (s *PostgresStore) SaveMessage(ctx context.Context, entry ConversationEntry) error {

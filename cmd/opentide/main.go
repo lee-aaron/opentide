@@ -15,6 +15,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/opentide/opentide/internal/adapters"
 	discordAdapter "github.com/opentide/opentide/internal/adapters/discord"
 	slackAdapter "github.com/opentide/opentide/internal/adapters/slack"
@@ -22,6 +24,7 @@ import (
 	"github.com/opentide/opentide/internal/admin"
 	"github.com/opentide/opentide/internal/approval"
 	"github.com/opentide/opentide/internal/config"
+	"github.com/opentide/opentide/internal/memory"
 	"github.com/opentide/opentide/internal/providers"
 	"github.com/opentide/opentide/internal/security"
 	"github.com/opentide/opentide/internal/security/secrets"
@@ -63,6 +66,18 @@ func main() {
 		logger.Warn("╚══════════════════════════════════════════════╝")
 	}
 
+	// Initialize Postgres pool (shared across state store and secrets store)
+	var pgPool *pgxpool.Pool
+	if cfg.State.Driver == "postgres" && cfg.State.PostgresDSN != "" {
+		pool, err := state.ConnectPool(context.Background(), cfg.State.PostgresDSN, logger)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Postgres error: %v\n", err)
+			os.Exit(1)
+		}
+		pgPool = pool
+		defer pool.Close()
+	}
+
 	// Initialize encrypted secrets store for API keys
 	var secretStore secrets.Store
 	if cfg.Security.AdminSecret != "" {
@@ -71,8 +86,13 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error deriving secrets key: %v\n", err)
 			os.Exit(1)
 		}
-		secretStore = secrets.NewMemoryStore(encKey)
-		logger.Info("secrets store initialized (encrypted, in-memory)")
+		if pgPool != nil {
+			secretStore = secrets.NewPostgresStore(pgPool, encKey)
+			logger.Info("secrets store initialized (encrypted, postgres)")
+		} else {
+			secretStore = secrets.NewMemoryStore(encKey)
+			logger.Info("secrets store initialized (encrypted, in-memory)")
+		}
 	}
 
 	// Initialize LLM providers (multi-provider registry)
@@ -91,18 +111,21 @@ func main() {
 
 	// Initialize state store
 	var store state.Store
-	if cfg.State.Driver == "postgres" && cfg.State.PostgresDSN != "" {
-		pgStore, err := state.NewPostgresStore(context.Background(), cfg.State.PostgresDSN)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Postgres error: %v\n", err)
-			os.Exit(1)
-		}
-		store = pgStore
-		defer pgStore.Close()
+	if pgPool != nil {
+		store = state.NewPostgresStore(pgPool)
 	} else {
 		store = state.NewMemoryStore()
 	}
 	logger.Info("state store initialized", "driver", cfg.State.Driver)
+
+	// Initialize user memory store
+	var memoryStore memory.Store
+	if pgPool != nil {
+		memoryStore = memory.NewPostgresStore(pgPool)
+	} else {
+		memoryStore = memory.NewMemoryStore()
+	}
+	logger.Info("user memory store initialized")
 
 	// Initialize approval engine
 	ttl := time.Duration(cfg.Security.ApprovalTTL) * time.Second
@@ -188,6 +211,7 @@ func main() {
 		registry:    registry,
 		adapter:     adapter,
 		store:       store,
+		memory:      memoryStore,
 		approval:    approvalEngine,
 		skills:      skillEngine,
 		rateLimiter: rateLimiter,

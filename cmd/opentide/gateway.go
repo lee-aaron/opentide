@@ -11,6 +11,7 @@ import (
 
 	"github.com/opentide/opentide/internal/adapters"
 	"github.com/opentide/opentide/internal/approval"
+	"github.com/opentide/opentide/internal/memory"
 	"github.com/opentide/opentide/internal/providers"
 	"github.com/opentide/opentide/internal/security"
 	"github.com/opentide/opentide/internal/skills"
@@ -24,6 +25,7 @@ type Gateway struct {
 	registry    *providers.Registry
 	adapter     adapters.Adapter
 	store       state.Store
+	memory      memory.Store
 	approval    *approval.MemoryEngine
 	skills      skills.Engine
 	rateLimiter *security.RateLimiter
@@ -92,8 +94,11 @@ func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessag
 		return
 	}
 
-	// Handle /model command before LLM call
+	// Handle slash commands before LLM call
 	if handled := g.handleModelCommand(ctx, msg); handled {
+		return
+	}
+	if handled := g.handleMemoryCommand(ctx, msg); handled {
 		return
 	}
 
@@ -127,7 +132,7 @@ func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessag
 	}
 
 	chatMsgs := []providers.ChatMessage{
-		{Role: providers.RoleSystem, Content: systemPrompt()},
+		{Role: providers.RoleSystem, Content: g.buildSystemPrompt(ctx, msg.UserID)},
 	}
 	for _, entry := range history {
 		chatMsgs = append(chatMsgs, entry.Message)
@@ -354,7 +359,118 @@ func (g *Gateway) handleToolCalls(ctx context.Context, msg adapters.IncomingMess
 	}
 }
 
-func systemPrompt() string {
-	return `You are OpenTide, a secure AI assistant. You are helpful, direct, and concise.
+// handleMemoryCommand processes /remember, /memories, /forget, /forget-all commands.
+// Returns true if the message was a memory command and was handled.
+func (g *Gateway) handleMemoryCommand(ctx context.Context, msg adapters.IncomingMessage) bool {
+	if g.memory == nil {
+		return false
+	}
+
+	content := strings.TrimSpace(msg.Content)
+
+	switch {
+	case strings.HasPrefix(content, "/remember "):
+		note := strings.TrimSpace(content[10:])
+		if note == "" {
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: "Usage: `/remember <something to remember>`",
+			})
+			return true
+		}
+		if _, err := g.memory.Add(ctx, msg.UserID, note); err != nil {
+			g.logger.Error("failed to save memory", "err", err)
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: "Failed to save memory. Please try again.",
+			})
+			return true
+		}
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+			Content: fmt.Sprintf("Remembered: *%s*", note),
+		})
+		return true
+
+	case content == "/memories":
+		notes, err := g.memory.List(ctx, msg.UserID)
+		if err != nil {
+			g.logger.Error("failed to list memories", "err", err)
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: "Failed to retrieve memories. Please try again.",
+			})
+			return true
+		}
+		if len(notes) == 0 {
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: "No memories saved. Use `/remember <note>` to add one.",
+			})
+			return true
+		}
+		var sb strings.Builder
+		sb.WriteString("**Your memories:**\n")
+		for _, n := range notes {
+			fmt.Fprintf(&sb, "• `#%d` %s\n", n.ID, n.Text)
+		}
+		sb.WriteString("\nUse `/forget <id>` to remove one, or `/forget-all` to clear all.")
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{Content: sb.String()})
+		return true
+
+	case strings.HasPrefix(content, "/forget-all"):
+		count, err := g.memory.DeleteAll(ctx, msg.UserID)
+		if err != nil {
+			g.logger.Error("failed to delete all memories", "err", err)
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: "Failed to clear memories. Please try again.",
+			})
+			return true
+		}
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+			Content: fmt.Sprintf("Cleared %d memories.", count),
+		})
+		return true
+
+	case strings.HasPrefix(content, "/forget "):
+		idStr := strings.TrimSpace(content[8:])
+		idStr = strings.TrimPrefix(idStr, "#")
+		var noteID int64
+		if _, err := fmt.Sscanf(idStr, "%d", &noteID); err != nil {
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: "Usage: `/forget <id>` (use `/memories` to see IDs)",
+			})
+			return true
+		}
+		if err := g.memory.Delete(ctx, msg.UserID, noteID); err != nil {
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: fmt.Sprintf("Note #%d not found. Use `/memories` to see your notes.", noteID),
+			})
+			return true
+		}
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+			Content: fmt.Sprintf("Forgot note #%d.", noteID),
+		})
+		return true
+	}
+
+	return false
+}
+
+// buildSystemPrompt creates the system prompt, optionally including user memories.
+func (g *Gateway) buildSystemPrompt(ctx context.Context, userID string) string {
+	base := `You are OpenTide, a secure AI assistant. You are helpful, direct, and concise.
 You prioritize user safety and transparency. When you don't know something, say so.`
+
+	if g.memory == nil {
+		return base
+	}
+
+	notes, err := g.memory.List(ctx, userID)
+	if err != nil || len(notes) == 0 {
+		return base
+	}
+
+	var sb strings.Builder
+	sb.WriteString(base)
+	sb.WriteString("\n\nThe user has saved the following notes for context:\n")
+	for _, n := range notes {
+		fmt.Fprintf(&sb, "- %s\n", n.Text)
+	}
+	return sb.String()
 }
