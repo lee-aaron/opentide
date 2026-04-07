@@ -144,11 +144,24 @@ func applyEnvOverrides(cfg *Config) {
 		}
 		cfg.Providers.OpenAI.APIKey = v
 	}
+	// Support both MODEL_ACCESS_KEY (official DO name) and DO_GRADIENT_API_KEY (legacy)
+	if v := os.Getenv("MODEL_ACCESS_KEY"); v != "" {
+		if cfg.Providers.Gradient == nil {
+			cfg.Providers.Gradient = &GradientConfig{}
+		}
+		cfg.Providers.Gradient.APIKey = v
+	}
 	if v := os.Getenv("DO_GRADIENT_API_KEY"); v != "" {
 		if cfg.Providers.Gradient == nil {
 			cfg.Providers.Gradient = &GradientConfig{}
 		}
 		cfg.Providers.Gradient.APIKey = v
+	}
+	if v := os.Getenv("GRADIENT_INFERENCE_ENDPOINT"); v != "" {
+		if cfg.Providers.Gradient == nil {
+			cfg.Providers.Gradient = &GradientConfig{}
+		}
+		cfg.Providers.Gradient.BaseURL = v
 	}
 	if v := os.Getenv("DISCORD_TOKEN"); v != "" {
 		if cfg.Adapters.Discord == nil {

@@ -16,8 +16,8 @@ const (
 func New(apiKey, model, baseURL string) (*openaiProvider.Provider, error) {
 	if apiKey == "" {
 		return nil, oerr.New(oerr.CodeProviderAuth, "DO Gradient API key is empty").
-			WithFix("Set the DO_GRADIENT_API_KEY environment variable").
-			WithDocs("https://docs.digitalocean.com/products/gradient/")
+			WithFix("Set MODEL_ACCESS_KEY (from DO Control Panel → Serverless Inference → Model Access Keys)").
+			WithDocs("https://docs.digitalocean.com/products/gradient-ai-platform/")
 	}
 	if model == "" {
 		model = defaultModel

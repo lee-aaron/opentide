@@ -32,7 +32,7 @@ services:
       - key: OPENAI_API_KEY
         scope: RUN_TIME
         type: SECRET
-      - key: DO_GRADIENT_API_KEY
+      - key: MODEL_ACCESS_KEY
         scope: RUN_TIME
         type: SECRET
       - key: DISCORD_TOKEN
