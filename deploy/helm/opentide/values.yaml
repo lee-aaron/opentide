@@ -24,10 +24,15 @@ adapters:
     botToken: ""
     appToken: ""
 
+# Admin UI authentication
+admin:
+  secret: ""       # required in non-demo mode; or use existingSecrets.admin
+
 # Use existing Kubernetes secrets instead of plain values
 existingSecrets:
   providers: ""    # secret name containing API keys
   adapters: ""     # secret name containing adapter tokens
+  admin: ""        # secret name containing OPENTIDE_ADMIN_SECRET
 
 # Gateway configuration
 gateway:
@@ -71,7 +76,7 @@ resources:
 
 # Health check
 healthCheck:
-  path: /health
+  path: /admin/health
   initialDelaySeconds: 10
   periodSeconds: 30
 

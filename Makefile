@@ -1,4 +1,4 @@
-.PHONY: build build-admin dev test clean
+.PHONY: build build-admin dev test clean docker docker-up docker-down
 
 # Build the React admin UI
 build-admin:
@@ -16,9 +16,22 @@ dev:
 	@echo "Start frontend: cd web/admin && npm run dev"
 	@echo "Start backend:  go run ./cmd/opentide --demo"
 
-# Run all tests
+# Run all tests (Go + frontend)
 test:
 	go test -race ./...
+	cd web/admin && npm run test
+
+# Build Docker image
+docker:
+	docker build -f deploy/docker/Dockerfile -t opentide:latest .
+
+# Start with docker compose (requires .env with secrets)
+docker-up:
+	docker compose up --build -d
+
+# Stop docker compose
+docker-down:
+	docker compose down
 
 # Clean build artifacts
 clean:

@@ -2,29 +2,30 @@
 # Deploy: doctl apps create --spec deploy/app-platform/app.yaml
 #
 # Required environment variables (set in DO App Platform dashboard):
+#   OPENTIDE_ADMIN_SECRET  - admin UI authentication secret
 #   ANTHROPIC_API_KEY or OPENAI_API_KEY or DO_GRADIENT_API_KEY
-#   DISCORD_TOKEN
-#   DATABASE_URL (auto-set when attaching a managed database)
+#   DISCORD_TOKEN or SLACK_BOT_TOKEN
 
 name: opentide
 
 services:
   - name: gateway
     github:
-      repo: opentide/opentide
+      repo: lee-aaron/opentide
       branch: main
       deploy_on_push: true
-    build_command: go build -ldflags="-s -w" -o opentide ./cmd/opentide
-    run_command: ./opentide --config opentide.yaml
-    environment_slug: go
+    dockerfile_path: deploy/docker/Dockerfile
     instance_count: 1
     instance_size_slug: professional-xs
     http_port: 8080
     health_check:
-      http_path: /health
+      http_path: /admin/health
       initial_delay_seconds: 10
       period_seconds: 30
     envs:
+      - key: OPENTIDE_ADMIN_SECRET
+        scope: RUN_TIME
+        type: SECRET
       - key: ANTHROPIC_API_KEY
         scope: RUN_TIME
         type: SECRET
@@ -35,6 +36,12 @@ services:
         scope: RUN_TIME
         type: SECRET
       - key: DISCORD_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: SLACK_BOT_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: SLACK_APP_TOKEN
         scope: RUN_TIME
         type: SECRET
 
