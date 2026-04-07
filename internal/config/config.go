@@ -78,8 +78,10 @@ type StateConfig struct {
 }
 
 type SecurityConfig struct {
-	MaxMessageSize int `yaml:"max_message_size"` // bytes, default 65536
-	ApprovalTTL    int `yaml:"approval_ttl"`     // seconds, default 300
+	MaxMessageSize int    `yaml:"max_message_size"` // bytes, default 65536
+	ApprovalTTL    int    `yaml:"approval_ttl"`     // seconds, default 300
+	AdminSecret    string `yaml:"admin_secret"`     // required in non-demo mode
+	AdminPort      int    `yaml:"admin_port"`       // default 8080
 }
 
 // Load reads config from a YAML file, with environment variable overrides.
@@ -124,6 +126,7 @@ func defaults() *Config {
 		Security: SecurityConfig{
 			MaxMessageSize: 65536,
 			ApprovalTTL:    300,
+			AdminPort:      8080,
 		},
 	}
 }
@@ -182,6 +185,9 @@ func applyEnvOverrides(cfg *Config) {
 	if strings.EqualFold(os.Getenv("OPENTIDE_DEV_MODE"), "true") {
 		cfg.Gateway.DevMode = true
 	}
+	if v := os.Getenv("OPENTIDE_ADMIN_SECRET"); v != "" {
+		cfg.Security.AdminSecret = v
+	}
 }
 
 func validate(cfg *Config) error {
@@ -200,6 +206,12 @@ func validate(cfg *Config) error {
 		return oerr.New(oerr.CodeConfigEnvEmpty, "no LLM provider configured").
 			WithFix("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or DO_GRADIENT_API_KEY").
 			WithDocs("https://github.com/opentide/opentide/blob/main/docs/getting-started.md")
+	}
+
+	if cfg.Security.AdminSecret == "" {
+		return oerr.New(oerr.CodeConfigEnvEmpty, "OPENTIDE_ADMIN_SECRET is required in non-demo mode").
+			WithFix("Set OPENTIDE_ADMIN_SECRET environment variable. Generate one with: tide-cli admin secret").
+			WithDocs("https://github.com/opentide/opentide/blob/main/docs/admin-api.md")
 	}
 
 	if cfg.Adapters.Discord == nil && cfg.Adapters.Telegram == nil && cfg.Adapters.Slack == nil {

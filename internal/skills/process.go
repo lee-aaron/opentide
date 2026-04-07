@@ -134,6 +134,7 @@ func (e *ProcessEngine) ListSkills(_ context.Context) ([]Info, error) {
 			Author:      skill.manifest.Author,
 			ToolName:    toolName,
 			Loaded:      true,
+			Security:    securityInfoFromManifest(skill.manifest),
 		})
 	}
 	return infos, nil

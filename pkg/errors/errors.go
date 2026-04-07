@@ -47,6 +47,15 @@ const (
 	CodeSecurityHash    Code = "SECURITY_HASH_FAILURE"
 	CodeSecuritySign    Code = "SECURITY_SIGN_FAILURE"
 	CodeSecurityVerify  Code = "SECURITY_VERIFY_FAILURE"
+
+	// Admin API errors
+	CodeAdminAuthRequired  Code = "ADMIN_AUTH_REQUIRED"
+	CodeAdminAuthInvalid   Code = "ADMIN_AUTH_INVALID"
+	CodeAdminRateLimited   Code = "ADMIN_RATE_LIMITED"
+	CodeAdminBadRequest    Code = "ADMIN_BAD_REQUEST"
+	CodeAdminNotFound      Code = "ADMIN_NOT_FOUND"
+	CodeAdminConflict      Code = "ADMIN_CONFLICT"
+	CodeAdminInternal      Code = "ADMIN_INTERNAL"
 )
 
 // Error is the structured error type for OpenTide.

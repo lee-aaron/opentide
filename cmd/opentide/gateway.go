@@ -11,6 +11,7 @@ import (
 	"github.com/opentide/opentide/internal/adapters"
 	"github.com/opentide/opentide/internal/approval"
 	"github.com/opentide/opentide/internal/providers"
+	"github.com/opentide/opentide/internal/security"
 	"github.com/opentide/opentide/internal/skills"
 	"github.com/opentide/opentide/internal/state"
 )
@@ -19,12 +20,13 @@ const maxMessageSize = 65536 // 64KB
 
 // Gateway is the core message processing loop.
 type Gateway struct {
-	provider providers.Provider
-	adapter  adapters.Adapter
-	store    state.Store
-	approval *approval.MemoryEngine
-	skills   skills.Engine
-	logger   *slog.Logger
+	provider    providers.Provider
+	adapter     adapters.Adapter
+	store       state.Store
+	approval    *approval.MemoryEngine
+	skills      skills.Engine
+	rateLimiter *security.RateLimiter
+	logger      *slog.Logger
 }
 
 func (g *Gateway) Run(ctx context.Context) error {
@@ -54,6 +56,18 @@ func (g *Gateway) Run(ctx context.Context) error {
 }
 
 func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessage) {
+	// Rate limiting
+	if g.rateLimiter != nil {
+		key := security.RateLimitKey("user", msg.UserID)
+		if !g.rateLimiter.Allow(key) {
+			g.logger.Warn("rate limited", "user", msg.UserID)
+			g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+				Content: "You're sending messages too quickly. Please wait a moment.",
+			})
+			return
+		}
+	}
+
 	// Input validation
 	if len(msg.Content) > maxMessageSize {
 		g.logger.Warn("message too large, dropping",

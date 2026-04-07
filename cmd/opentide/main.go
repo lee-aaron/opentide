@@ -5,24 +5,30 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/opentide/opentide/internal/adapters"
 	discordAdapter "github.com/opentide/opentide/internal/adapters/discord"
 	slackAdapter "github.com/opentide/opentide/internal/adapters/slack"
 	"github.com/opentide/opentide/internal/adapters/stdio"
+	"github.com/opentide/opentide/internal/admin"
 	"github.com/opentide/opentide/internal/approval"
 	"github.com/opentide/opentide/internal/config"
 	"github.com/opentide/opentide/internal/providers"
+	"github.com/opentide/opentide/internal/security"
 	anthropicProvider "github.com/opentide/opentide/internal/providers/anthropic"
 	"github.com/opentide/opentide/internal/providers/gradient"
 	openaiProvider "github.com/opentide/opentide/internal/providers/openai"
 	"github.com/opentide/opentide/internal/skills"
 	"github.com/opentide/opentide/internal/state"
+	"github.com/opentide/opentide/internal/tenant"
 	"github.com/opentide/opentide/pkg/skillspec"
 )
 
@@ -63,7 +69,18 @@ func main() {
 	logger.Info("LLM provider initialized", "provider", provider.Name(), "model", provider.ModelID())
 
 	// Initialize state store
-	store := state.NewMemoryStore()
+	var store state.Store
+	if cfg.State.Driver == "postgres" && cfg.State.PostgresDSN != "" {
+		pgStore, err := state.NewPostgresStore(context.Background(), cfg.State.PostgresDSN)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Postgres error: %v\n", err)
+			os.Exit(1)
+		}
+		store = pgStore
+		defer pgStore.Close()
+	} else {
+		store = state.NewMemoryStore()
+	}
 	logger.Info("state store initialized", "driver", cfg.State.Driver)
 
 	// Initialize approval engine
@@ -96,21 +113,69 @@ func main() {
 	// Load skills from skills/ directory
 	loadSkills(skillEngine, "skills", logger)
 
-	// Start gateway
+	// Initialize rate limiter
+	rateLimiter := security.NewRateLimiter(security.DefaultRateLimitConfig())
+	defer rateLimiter.Close()
+	logger.Info("rate limiter initialized")
+
+	// Initialize admin server
+	tenantStore := tenant.NewMemoryStore()
+	adminSrv := admin.NewServer(tenantStore, skillEngine, approvalEngine, rateLimiter, cfg, logger)
+
+	// Determine admin bind address
+	adminHost := cfg.Gateway.Host
+	if cfg.Gateway.DemoMode {
+		adminHost = "127.0.0.1" // demo mode binds localhost only
+	}
+	adminAddr := fmt.Sprintf("%s:%d", adminHost, cfg.Security.AdminPort)
+
+	httpServer := &http.Server{
+		Addr:              adminAddr,
+		Handler:           adminSrv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// Start gateway and admin server concurrently
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	g, ctx := errgroup.WithContext(ctx)
+
+	// Admin HTTP server
+	g.Go(func() error {
+		logger.Info("admin server starting", "addr", adminAddr)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("admin server: %w", err)
+		}
+		return nil
+	})
+
+	// Graceful shutdown for admin server
+	g.Go(func() error {
+		<-ctx.Done()
+		logger.Info("shutting down admin server")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		return httpServer.Shutdown(shutdownCtx)
+	})
+
+	// Gateway (messaging adapters + LLM)
 	gw := &Gateway{
-		provider: provider,
-		adapter:  adapter,
-		store:    store,
-		approval: approvalEngine,
-		skills:   skillEngine,
-		logger:   logger,
+		provider:    provider,
+		adapter:     adapter,
+		store:       store,
+		approval:    approvalEngine,
+		skills:      skillEngine,
+		rateLimiter: rateLimiter,
+		logger:      logger,
 	}
 
-	if err := gw.Run(ctx); err != nil {
-		logger.Error("gateway error", "err", err)
+	g.Go(func() error {
+		return gw.Run(ctx)
+	})
+
+	if err := g.Wait(); err != nil {
+		logger.Error("shutdown", "err", err)
 		os.Exit(1)
 	}
 }

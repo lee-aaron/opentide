@@ -43,8 +43,10 @@ func TestLoad_MissingProviderInDemo(t *testing.T) {
 func TestLoad_EnvOverrides(t *testing.T) {
 	os.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 	os.Setenv("DISCORD_TOKEN", "disc-tok")
+	os.Setenv("OPENTIDE_ADMIN_SECRET", "test-secret")
 	defer os.Unsetenv("ANTHROPIC_API_KEY")
 	defer os.Unsetenv("DISCORD_TOKEN")
+	defer os.Unsetenv("OPENTIDE_ADMIN_SECRET")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -60,13 +62,30 @@ func TestLoad_EnvOverrides(t *testing.T) {
 
 func TestLoad_NoAdapterInFullMode(t *testing.T) {
 	os.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	os.Setenv("OPENTIDE_ADMIN_SECRET", "test-secret")
 	os.Unsetenv("DISCORD_TOKEN")
 	os.Unsetenv("TELEGRAM_TOKEN")
+	os.Unsetenv("SLACK_BOT_TOKEN")
 	os.Unsetenv("OPENTIDE_DEMO")
 	defer os.Unsetenv("ANTHROPIC_API_KEY")
+	defer os.Unsetenv("OPENTIDE_ADMIN_SECRET")
 
 	_, err := Load("")
 	if err == nil {
 		t.Fatal("expected error for missing adapter in full mode")
+	}
+}
+
+func TestLoad_NoAdminSecretInFullMode(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	os.Setenv("DISCORD_TOKEN", "disc-tok")
+	os.Unsetenv("OPENTIDE_ADMIN_SECRET")
+	os.Unsetenv("OPENTIDE_DEMO")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+	defer os.Unsetenv("DISCORD_TOKEN")
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error for missing admin secret in full mode")
 	}
 }

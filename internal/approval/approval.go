@@ -40,11 +40,16 @@ type Decision struct {
 
 // AuditEntry records an approval decision for the audit log.
 type AuditEntry struct {
-	Timestamp time.Time `json:"timestamp"`
-	Action    Action    `json:"action"`
-	Decision  Decision  `json:"decision"`
-	ActualHash string   `json:"actual_hash,omitempty"` // hash at enforcement time
+	Timestamp     time.Time `json:"timestamp"`
+	Action        Action    `json:"action"`          // action at enforcement time
+	ApprovedAction *Action  `json:"approved_action,omitempty"` // action at approval time (for TOCTOU diff)
+	Decision      Decision  `json:"decision"`
+	ActualHash    string    `json:"actual_hash,omitempty"` // hash at enforcement time
+	Acknowledged  bool      `json:"acknowledged,omitempty"`
 }
+
+// maxAuditEntries is the cap for the in-memory audit log.
+const maxAuditEntries = 10000
 
 // Engine is the approval engine interface.
 type Engine interface {
@@ -148,14 +153,24 @@ func (e *MemoryEngine) CheckPolicy(_ context.Context, action Action) (Decision, 
 func (e *MemoryEngine) Enforce(_ context.Context, action Action, decision Decision) error {
 	actualHash := HashAction(action)
 	if actualHash != decision.Hash {
+		// Reconstruct the approved action from the decision scope for diffing
+		approvedAction := Action{
+			SkillName:  decision.Scope.SkillName,
+			ActionType: decision.Scope.ActionType,
+			Target:     decision.Scope.Target,
+		}
 		entry := AuditEntry{
-			Timestamp:  time.Now(),
-			Action:     action,
-			Decision:   decision,
-			ActualHash: actualHash,
+			Timestamp:      time.Now(),
+			Action:         action,
+			ApprovedAction: &approvedAction,
+			Decision:       decision,
+			ActualHash:     actualHash,
 		}
 		e.mu.Lock()
 		e.audit = append(e.audit, entry)
+		if len(e.audit) > maxAuditEntries {
+			e.audit = e.audit[len(e.audit)-maxAuditEntries:]
+		}
 		e.mu.Unlock()
 		return fmt.Errorf("action hash mismatch: approved=%s actual=%s (possible TOCTOU attack)", decision.Hash[:16], actualHash[:16])
 	}
@@ -165,6 +180,135 @@ func (e *MemoryEngine) Enforce(_ context.Context, action Action, decision Decisi
 func (e *MemoryEngine) AuditLog(_ context.Context, entry AuditEntry) error {
 	e.mu.Lock()
 	e.audit = append(e.audit, entry)
+	if len(e.audit) > maxAuditEntries {
+		// Evict oldest entries to stay within cap
+		e.audit = e.audit[len(e.audit)-maxAuditEntries:]
+	}
 	e.mu.Unlock()
 	return nil
+}
+
+// AuditFilter controls which audit entries are returned.
+type AuditFilter struct {
+	SkillName  string
+	ActionType string
+	Since      time.Time
+	Until      time.Time
+	MismatchOnly bool
+}
+
+// SetPolicy creates or updates an approval policy.
+func (e *MemoryEngine) SetPolicy(_ context.Context, scope ApprovalScope, allowed bool, reason string) Decision {
+	hash := HashAction(Action{
+		SkillName:  scope.SkillName,
+		ActionType: scope.ActionType,
+		Target:     scope.Target,
+	})
+	d := Decision{
+		Allowed:   allowed,
+		Reason:    reason,
+		Hash:      hash,
+		ExpiresAt: time.Now().Add(e.ttl),
+		Scope:     scope,
+	}
+	e.mu.Lock()
+	e.policies[scopeKey(scope)] = d
+	e.mu.Unlock()
+	return d
+}
+
+// DeletePolicy removes an approval policy by scope key.
+func (e *MemoryEngine) DeletePolicy(_ context.Context, key string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.policies[key]; !ok {
+		return false
+	}
+	delete(e.policies, key)
+	return true
+}
+
+// ListPolicies returns all active (non-expired) approval policies.
+func (e *MemoryEngine) ListPolicies(_ context.Context) []Decision {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	now := time.Now()
+	var result []Decision
+	for _, d := range e.policies {
+		if now.Before(d.ExpiresAt) {
+			result = append(result, d)
+		}
+	}
+	return result
+}
+
+// GetAuditLog returns a paginated, filtered view of the audit log.
+func (e *MemoryEngine) GetAuditLog(_ context.Context, offset, limit int, filter *AuditFilter) []AuditEntry {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	var filtered []AuditEntry
+	for i := len(e.audit) - 1; i >= 0; i-- {
+		entry := e.audit[i]
+		if filter != nil {
+			if filter.SkillName != "" && entry.Action.SkillName != filter.SkillName {
+				continue
+			}
+			if filter.ActionType != "" && entry.Action.ActionType != filter.ActionType {
+				continue
+			}
+			if !filter.Since.IsZero() && entry.Timestamp.Before(filter.Since) {
+				continue
+			}
+			if !filter.Until.IsZero() && entry.Timestamp.After(filter.Until) {
+				continue
+			}
+			if filter.MismatchOnly && (entry.ActualHash == "" || entry.ActualHash == entry.Decision.Hash) {
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+
+	// Apply pagination
+	if offset >= len(filtered) {
+		return nil
+	}
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end]
+}
+
+// AuditLogLen returns the number of entries in the audit log.
+func (e *MemoryEngine) AuditLogLen() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return len(e.audit)
+}
+
+// AcknowledgeEntry marks an audit entry as acknowledged (for incident tracking).
+func (e *MemoryEngine) AcknowledgeEntry(_ context.Context, index int) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if index < 0 || index >= len(e.audit) {
+		return false
+	}
+	e.audit[index].Acknowledged = true
+	return true
+}
+
+// UnacknowledgedMismatches returns the count of TOCTOU mismatches not yet acknowledged.
+func (e *MemoryEngine) UnacknowledgedMismatches() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	count := 0
+	for _, entry := range e.audit {
+		if entry.ActualHash != "" && entry.ActualHash != entry.Decision.Hash && !entry.Acknowledged {
+			count++
+		}
+	}
+	return count
 }

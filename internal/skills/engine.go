@@ -31,12 +31,22 @@ type Output struct {
 
 // Info describes a loaded skill.
 type Info struct {
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	Description string `json:"description"`
-	Author      string `json:"author"`
-	ToolName    string `json:"tool_name"`
-	Loaded      bool   `json:"loaded"`
+	Name        string         `json:"name"`
+	Version     string         `json:"version"`
+	Description string         `json:"description"`
+	Author      string         `json:"author"`
+	ToolName    string         `json:"tool_name"`
+	Loaded      bool           `json:"loaded"`
+	Security    *SecurityInfo  `json:"security,omitempty"`
+}
+
+// SecurityInfo is the security posture of a loaded skill, derived from its manifest.
+type SecurityInfo struct {
+	Egress     []string `json:"egress"`     // allowed host:port pairs
+	Filesystem string   `json:"filesystem"` // "read-only" or "read-write"
+	MaxMemory  string   `json:"max_memory"`
+	MaxCPU     string   `json:"max_cpu"`
+	Timeout    string   `json:"timeout"`
 }
 
 // Engine is the skill execution engine interface.
@@ -55,6 +65,22 @@ type Engine interface {
 
 	// Close shuts down the engine and cleans up resources.
 	Close() error
+}
+
+// securityInfoFromManifest extracts SecurityInfo from a skill manifest.
+func securityInfoFromManifest(m *skillspec.Manifest) *SecurityInfo {
+	s := &m.Security
+	egress := s.Egress
+	if egress == nil {
+		egress = []string{}
+	}
+	return &SecurityInfo{
+		Egress:     egress,
+		Filesystem: s.Filesystem,
+		MaxMemory:  s.MaxMemory,
+		MaxCPU:     s.MaxCPU,
+		Timeout:    s.Timeout,
+	}
 }
 
 // SkillNotFoundError is returned when a skill is not loaded.
