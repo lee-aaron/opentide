@@ -26,11 +26,19 @@ go run ./cmd/opentide --demo
 
 ## Discord Bot
 
+1. Create app at https://discord.com/developers/applications
+2. Bot tab: copy token, enable **Message Content Intent**
+3. OAuth2 > URL Generator: scopes `bot` + `applications.commands`, permissions: Send Messages, Read History, Slash Commands
+4. Open the generated URL to invite the bot to your server
+
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-your-key
+export OPENTIDE_ADMIN_SECRET=$(go run ./cmd/tide-cli admin secret 2>/dev/null)
 export DISCORD_TOKEN=your-bot-token
+export ANTHROPIC_API_KEY=sk-ant-your-key  # or add via admin UI
 go run ./cmd/opentide
 ```
+
+@mention the bot in channels, use `/chat`, or DM it directly.
 
 ## Multi-Provider Routing
 

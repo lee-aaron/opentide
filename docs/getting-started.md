@@ -26,20 +26,51 @@ If you set an API key, you'll get a chat prompt immediately. If not, open `http:
 
 ## Discord Bot Setup
 
-1. Create a Discord application at https://discord.com/developers/applications
-2. Go to Bot settings, click "Add Bot"
-3. Enable "Message Content Intent" under Privileged Gateway Intents
-4. Copy the bot token
-5. Invite the bot to your server using the OAuth2 URL Generator (scopes: `bot`, `applications.commands`)
+### 1. Create the Application
+
+Go to https://discord.com/developers/applications and click **New Application**. Give it a name (e.g., "OpenTide").
+
+### 2. Get the Bot Token
+
+Go to the **Bot** tab. Click **Reset Token** and copy it. This is your `DISCORD_TOKEN`.
+
+Under **Privileged Gateway Intents**, enable:
+- **Message Content Intent** (required - the bot reads message text)
+
+Leave Server Members and Presence intents off.
+
+### 3. Invite the Bot to Your Server
+
+Go to **OAuth2 > URL Generator**.
+
+Select scopes:
+- `bot`
+- `applications.commands`
+
+Select bot permissions:
+- Send Messages
+- Read Message History
+- Use Slash Commands
+
+Copy the generated URL and open it in your browser. Select your server and authorize.
+
+### 4. Start the Bot
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-your-key-here
+export OPENTIDE_ADMIN_SECRET=your-admin-secret
 export DISCORD_TOKEN=your-bot-token
+export ANTHROPIC_API_KEY=sk-ant-your-key  # or add via admin UI
 
 go run ./cmd/opentide
 ```
 
-Mention the bot in any channel or use the `/chat` slash command.
+### 5. Talk to the Bot
+
+**In server channels:** @mention the bot (e.g., `@OpenTide what's the weather?`) or use the `/chat` slash command.
+
+**In DMs:** Click the bot's name in the server member list, then "Message". No @mention needed in DMs, just type directly.
+
+The bot also supports approval buttons for skill actions that require user confirmation.
 
 ## Configuration
 
