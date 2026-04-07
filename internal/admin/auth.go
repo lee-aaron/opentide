@@ -82,7 +82,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(sessionMaxAge.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil,
+		Secure:   isSecureRequest(r),
 	})
 
 	s.logger.Info("admin login successful", "remote_addr", r.RemoteAddr)
@@ -150,6 +150,17 @@ func (s *Server) validateSession(token string) bool {
 	}
 	issuedAt := time.Unix(ts, 0)
 	return time.Since(issuedAt) < sessionMaxAge
+}
+
+// isSecureRequest returns true if the request came over TLS, either directly
+// or via a reverse proxy (X-Forwarded-Proto). Cookie Secure flag must be set
+// for HTTPS to prevent session hijacking.
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	// Behind reverse proxy (DO App Platform, nginx, etc.)
+	return r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 func (s *Server) computeMAC(data string) string {

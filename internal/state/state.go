@@ -22,6 +22,10 @@ type ConversationEntry struct {
 type Store interface {
 	SaveMessage(ctx context.Context, entry ConversationEntry) error
 	GetHistory(ctx context.Context, channelID string, limit int) ([]ConversationEntry, error)
+	// DeleteUserData removes all conversation data for a user (GDPR right to erasure).
+	DeleteUserData(ctx context.Context, userID string) error
+	// CleanupOlderThan removes conversations older than the given duration.
+	CleanupOlderThan(ctx context.Context, age time.Duration) (int, error)
 	Close() error
 }
 
@@ -56,6 +60,48 @@ func (s *MemoryStore) GetHistory(_ context.Context, channelID string, limit int)
 	result := make([]ConversationEntry, len(entries))
 	copy(result, entries)
 	return result, nil
+}
+
+func (s *MemoryStore) DeleteUserData(_ context.Context, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for channelID, entries := range s.history {
+		filtered := entries[:0]
+		for _, e := range entries {
+			if e.UserID != userID {
+				filtered = append(filtered, e)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(s.history, channelID)
+		} else {
+			s.history[channelID] = filtered
+		}
+	}
+	return nil
+}
+
+func (s *MemoryStore) CleanupOlderThan(_ context.Context, age time.Duration) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff := time.Now().Add(-age)
+	removed := 0
+	for channelID, entries := range s.history {
+		filtered := entries[:0]
+		for _, e := range entries {
+			if e.Timestamp.After(cutoff) {
+				filtered = append(filtered, e)
+			} else {
+				removed++
+			}
+		}
+		if len(filtered) == 0 {
+			delete(s.history, channelID)
+		} else {
+			s.history[channelID] = filtered
+		}
+	}
+	return removed, nil
 }
 
 func (s *MemoryStore) Close() error {

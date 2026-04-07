@@ -104,8 +104,10 @@ func (e *ContainerEngine) InvokeSkill(ctx context.Context, toolName string, inpu
 	}
 
 	if err != nil {
+		// Never expose raw stderr to users (may contain secrets from env vars or configs).
+		// Return a generic error message only.
 		return &Output{
-			Error:    fmt.Sprintf("exit error: %v, stderr: %s", err, stderr.String()),
+			Error:    fmt.Sprintf("skill %q execution failed", skill.manifest.Name),
 			Duration: duration,
 		}, nil
 	}

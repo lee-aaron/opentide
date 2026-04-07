@@ -123,6 +123,20 @@ func (s *PostgresStore) GetHistory(ctx context.Context, channelID string, limit 
 	return entries, nil
 }
 
+func (s *PostgresStore) DeleteUserData(ctx context.Context, userID string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM conversations WHERE user_id = $1`, userID)
+	return err
+}
+
+func (s *PostgresStore) CleanupOlderThan(ctx context.Context, age time.Duration) (int, error) {
+	cutoff := time.Now().Add(-age)
+	tag, err := s.pool.Exec(ctx, `DELETE FROM conversations WHERE created_at < $1`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // AuditLog writes a structured event to the audit log.
 func (s *PostgresStore) AuditLog(ctx context.Context, eventType string, payload any) error {
 	data, err := json.Marshal(payload)

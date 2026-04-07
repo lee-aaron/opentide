@@ -104,10 +104,12 @@ func (s *Server) handleSetSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try to create the provider first to validate the key format
+	// Try to create the provider first to validate the key format.
+	// Never expose provider SDK errors to users (may reveal internals).
 	p, err := createProvider(req.Provider, req.APIKey, req.Model, req.BaseURL, s.config)
 	if err != nil {
-		s.jsonError(w, fmt.Sprintf("invalid API key or configuration: %v", err), http.StatusBadRequest)
+		s.logger.Warn("provider creation failed for stored secret", "provider", req.Provider, "err", err)
+		s.jsonError(w, "invalid API key or configuration", http.StatusBadRequest)
 		return
 	}
 
