@@ -3,10 +3,20 @@
 #
 # Required environment variables (set in DO App Platform dashboard):
 #   OPENTIDE_ADMIN_SECRET  - admin UI authentication secret
-#   ANTHROPIC_API_KEY or OPENAI_API_KEY or DO_GRADIENT_API_KEY
-#   DISCORD_TOKEN or SLACK_BOT_TOKEN
+#   DISCORD_TOKEN or SLACK_BOT_TOKEN - messaging adapter
+#
+# LLM API keys can be set here or added via the admin UI after deploy.
+# The code-runner skill is not available on App Platform (no Docker socket).
 
 name: opentide
+
+ingress:
+  rules:
+    - component:
+        name: gateway
+      match:
+        path:
+          prefix: /
 
 services:
   - name: gateway
@@ -23,9 +33,13 @@ services:
       initial_delay_seconds: 10
       period_seconds: 30
     envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${opentide-db.DATABASE_URL}
       - key: OPENTIDE_ADMIN_SECRET
         scope: RUN_TIME
         type: SECRET
+      # LLM providers (optional at deploy time, can be added via admin UI)
       - key: ANTHROPIC_API_KEY
         scope: RUN_TIME
         type: SECRET
@@ -35,6 +49,7 @@ services:
       - key: MODEL_ACCESS_KEY
         scope: RUN_TIME
         type: SECRET
+      # Messaging adapters (at least one required)
       - key: DISCORD_TOKEN
         scope: RUN_TIME
         type: SECRET
@@ -42,6 +57,13 @@ services:
         scope: RUN_TIME
         type: SECRET
       - key: SLACK_APP_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      # Skill configuration (optional)
+      - key: GITHUB_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: BRAVE_API_KEY
         scope: RUN_TIME
         type: SECRET
 

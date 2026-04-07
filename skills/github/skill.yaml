@@ -1,0 +1,27 @@
+name: github
+version: 0.1.0
+description: Read GitHub issues, PRs, and commits via the GitHub API (read-only)
+author: opentide
+license: Apache-2.0
+
+security:
+  egress:
+    - "api.github.com:443"
+  filesystem: read-only
+  max_memory: 128Mi
+  max_cpu: "0.5"
+  timeout: 30s
+
+triggers:
+  tool_name: github
+  keywords:
+    - github
+    - issue
+    - pull request
+    - pr
+    - commit
+
+runtime:
+  image: opentide/skill-github:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill

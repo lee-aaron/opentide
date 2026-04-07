@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Tenant } from './types'
+import type { Tenant, SetSecretRequest } from './types'
 
 export function useStatus() {
   return useQuery({
@@ -105,6 +105,67 @@ export function useConfig() {
 export function useProviders() {
   return useQuery({
     queryKey: ['providers'],
-    queryFn: api.getProviders,
+    queryFn: api.listProviders,
+    refetchInterval: 30_000,
+  })
+}
+
+export function useRoutes() {
+  return useQuery({
+    queryKey: ['routes'],
+    queryFn: api.listRoutes,
+  })
+}
+
+export function useCreateRoute() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (route: import('./types').ProviderRoute) => api.createRoute(route),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['routes'] }),
+  })
+}
+
+export function useDeleteRoute() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (index: number) => api.deleteRoute(index),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['routes'] }),
+  })
+}
+
+export function useTestRoute() {
+  return useMutation({
+    mutationFn: ({ userID, channelID }: { userID: string; channelID: string }) =>
+      api.testRoute(userID, channelID),
+  })
+}
+
+export function useSecrets() {
+  return useQuery({
+    queryKey: ['secrets'],
+    queryFn: api.listSecrets,
+    refetchInterval: 30_000,
+  })
+}
+
+export function useSetSecret() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: SetSecretRequest) => api.setSecret(req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['secrets'] })
+      qc.invalidateQueries({ queryKey: ['providers'] })
+    },
+  })
+}
+
+export function useDeleteSecret() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (provider: string) => api.deleteSecret(provider),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['secrets'] })
+      qc.invalidateQueries({ queryKey: ['providers'] })
+    },
   })
 }

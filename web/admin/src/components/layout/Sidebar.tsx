@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Shield, Users, Puzzle, FileCheck, Activity, Settings } from 'lucide-react'
+import { LayoutDashboard, Shield, Users, Puzzle, FileCheck, Activity, Settings, Cpu } from 'lucide-react'
 import { useAuditLog } from '@/api/hooks'
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/admin/audit', icon: FileCheck, label: 'Audit Log' },
   { to: '/admin/approvals', icon: Activity, label: 'Approvals' },
   { to: '/admin/tenants', icon: Users, label: 'Tenants' },
+  { to: '/admin/providers', icon: Cpu, label: 'Providers' },
   { to: '/admin/skills', icon: Puzzle, label: 'Skills' },
   { to: '/admin/settings', icon: Settings, label: 'Settings' },
 ]

@@ -17,11 +17,13 @@ import (
 
 func cmdSkill() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: tide-cli skill <list|verify|sign|keygen|publish|search|install>")
+		fmt.Fprintln(os.Stderr, "Usage: tide-cli skill <new|list|verify|sign|keygen|publish|search|install>")
 		os.Exit(1)
 	}
 
 	switch os.Args[2] {
+	case "new":
+		cmdSkillNew()
 	case "list":
 		cmdSkillList()
 	case "verify":
@@ -295,6 +297,148 @@ func cmdSkillSearch() {
 		fmt.Println()
 	}
 	fmt.Printf("%d skill(s) found.\n", result.Total)
+}
+
+func cmdSkillNew() {
+	if len(os.Args) < 4 {
+		fmt.Fprintln(os.Stderr, "Usage: tide-cli skill new <name>")
+		os.Exit(1)
+	}
+
+	name := os.Args[3]
+	dir := filepath.Join("skills", name)
+
+	if _, err := os.Stat(dir); err == nil {
+		fmt.Fprintf(os.Stderr, "Skill directory already exists: %s\n", dir)
+		os.Exit(1)
+	}
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot create directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// skill.yaml
+	manifest := fmt.Sprintf(`name: %s
+version: 0.1.0
+description: TODO - describe what this skill does
+author: opentide
+license: Apache-2.0
+
+security:
+  egress: []
+  filesystem: read-only
+  max_memory: 128Mi
+  max_cpu: "0.5"
+  timeout: 30s
+
+triggers:
+  tool_name: %s
+  keywords:
+    - TODO
+
+runtime:
+  image: opentide/skill-%s:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill
+`, name, strings.ReplaceAll(name, "-", "_"), name)
+
+	// main.go
+	mainGo := fmt.Sprintf(`package main
+
+import (
+	"encoding/json"
+	"io"
+	"os"
+)
+
+type Input struct {
+	Arguments map[string]any `+"`"+`json:"arguments"`+"`"+`
+}
+
+type Output struct {
+	Content string `+"`"+`json:"content"`+"`"+`
+	Error   string `+"`"+`json:"error,omitempty"`+"`"+`
+}
+
+func main() {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		writeError("failed to read input: " + err.Error())
+		return
+	}
+
+	var input Input
+	if err := json.Unmarshal(data, &input); err != nil {
+		writeError("invalid input JSON: " + err.Error())
+		return
+	}
+
+	query, _ := input.Arguments["query"].(string)
+	if query == "" {
+		writeError("missing 'query' argument")
+		return
+	}
+
+	// TODO: implement skill logic for %s
+	writeOutput("Hello from %s! Query: " + query)
+}
+
+func writeOutput(content string) {
+	json.NewEncoder(os.Stdout).Encode(Output{Content: content})
+}
+
+func writeError(msg string) {
+	json.NewEncoder(os.Stdout).Encode(Output{Error: msg})
+}
+`, name, name)
+
+	// go.mod
+	goMod := fmt.Sprintf(`module github.com/opentide/opentide/skills/%s
+
+go 1.23
+`, name)
+
+	// Dockerfile
+	dockerfile := fmt.Sprintf(`FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY main.go .
+COPY go.mod .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /skill .
+
+FROM alpine:3.21
+RUN adduser -D -u 1000 skill
+COPY --from=builder /skill /skill
+USER skill
+ENTRYPOINT ["/skill"]
+`)
+
+	files := map[string]string{
+		"skill.yaml": manifest,
+		"main.go":    mainGo,
+		"go.mod":     goMod,
+		"Dockerfile": dockerfile,
+	}
+
+	for filename, content := range files {
+		path := filepath.Join(dir, filename)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to write %s: %v\n", path, err)
+			os.Exit(1)
+		}
+	}
+
+	fmt.Printf("Skill scaffolded in %s/\n", dir)
+	fmt.Println("Files created:")
+	fmt.Println("  skill.yaml  - manifest (update description, triggers, egress)")
+	fmt.Println("  main.go     - skill logic (reads JSON from stdin, writes JSON to stdout)")
+	fmt.Println("  go.mod      - Go module")
+	fmt.Println("  Dockerfile  - container build")
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Printf("  1. Edit skills/%s/main.go to implement your skill logic\n", name)
+	fmt.Printf("  2. Update skills/%s/skill.yaml with proper description and triggers\n", name)
+	fmt.Printf("  3. Test: cd skills/%s && go build -o /dev/null .\n", name)
 }
 
 func cmdSkillInstall() {

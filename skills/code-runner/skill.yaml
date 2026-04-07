@@ -1,0 +1,29 @@
+name: code-runner
+version: 0.1.0
+description: Execute Python, JavaScript, or Go code snippets in a sandboxed environment
+author: opentide
+license: Apache-2.0
+
+security:
+  egress: []
+  filesystem: read-only
+  max_memory: 256Mi
+  max_cpu: "0.5"
+  timeout: 10s
+
+platform_requirements:
+  - docker
+
+triggers:
+  tool_name: code_runner
+  keywords:
+    - run code
+    - execute
+    - python
+    - javascript
+    - golang
+
+runtime:
+  image: opentide/skill-code-runner:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill

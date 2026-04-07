@@ -1,0 +1,26 @@
+name: reminder
+version: 0.1.0
+description: Set time-based reminders that are delivered back via the messaging adapter
+author: opentide
+license: Apache-2.0
+
+security:
+  egress: []
+  filesystem: read-only
+  max_memory: 64Mi
+  max_cpu: "0.25"
+  timeout: 10s
+
+triggers:
+  tool_name: reminder
+  keywords:
+    - remind
+    - reminder
+    - timer
+    - alarm
+    - schedule
+
+runtime:
+  image: opentide/skill-reminder:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill

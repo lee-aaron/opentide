@@ -1,0 +1,27 @@
+name: url-fetch
+version: 0.1.0
+description: Fetch a URL and return its text content with SSRF protection
+author: opentide
+license: Apache-2.0
+
+security:
+  egress:
+    - "*:443"
+  filesystem: read-only
+  max_memory: 128Mi
+  max_cpu: "0.5"
+  timeout: 30s
+
+triggers:
+  tool_name: url_fetch
+  keywords:
+    - fetch
+    - url
+    - webpage
+    - download
+    - http
+
+runtime:
+  image: opentide/skill-url-fetch:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill

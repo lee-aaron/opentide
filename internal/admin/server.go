@@ -13,7 +13,9 @@ import (
 
 	"github.com/opentide/opentide/internal/approval"
 	"github.com/opentide/opentide/internal/config"
+	"github.com/opentide/opentide/internal/providers"
 	"github.com/opentide/opentide/internal/security"
+	"github.com/opentide/opentide/internal/security/secrets"
 	"github.com/opentide/opentide/internal/skills"
 	"github.com/opentide/opentide/internal/tenant"
 	oerr "github.com/opentide/opentide/pkg/errors"
@@ -25,6 +27,8 @@ type Server struct {
 	skills      skills.Engine
 	approvals   *approval.MemoryEngine
 	rateLimiter *security.RateLimiter
+	registry    *providers.Registry
+	secrets     secrets.Store
 	config      *config.Config
 	logger      *slog.Logger
 	mux         *http.ServeMux
@@ -32,12 +36,14 @@ type Server struct {
 }
 
 // NewServer creates an admin dashboard server.
-func NewServer(tenants tenant.Store, skillEngine skills.Engine, approvals *approval.MemoryEngine, rateLimiter *security.RateLimiter, cfg *config.Config, logger *slog.Logger) *Server {
+func NewServer(tenants tenant.Store, skillEngine skills.Engine, approvals *approval.MemoryEngine, rateLimiter *security.RateLimiter, registry *providers.Registry, secretStore secrets.Store, cfg *config.Config, logger *slog.Logger) *Server {
 	s := &Server{
 		tenants:     tenants,
 		skills:      skillEngine,
 		approvals:   approvals,
 		rateLimiter: rateLimiter,
+		registry:    registry,
+		secrets:     secretStore,
 		config:      cfg,
 		logger:      logger,
 		mux:         http.NewServeMux(),
@@ -85,6 +91,18 @@ func (s *Server) routes() {
 	// Config (auth required)
 	s.mux.HandleFunc("GET /admin/api/config", s.authMiddleware(s.handleGetConfig))
 	s.mux.HandleFunc("GET /admin/api/config/providers", s.authMiddleware(s.handleProviderStatus))
+
+	// Provider routing (auth required)
+	s.mux.HandleFunc("GET /admin/api/providers", s.authMiddleware(s.handleListProviders))
+	s.mux.HandleFunc("GET /admin/api/providers/routes", s.authMiddleware(s.handleListRoutes))
+	s.mux.HandleFunc("POST /admin/api/providers/routes", s.authMiddleware(s.handleCreateRoute))
+	s.mux.HandleFunc("DELETE /admin/api/providers/routes/{index}", s.authMiddleware(s.handleDeleteRoute))
+	s.mux.HandleFunc("POST /admin/api/providers/test-route", s.authMiddleware(s.handleTestRoute))
+
+	// Secrets management (auth required)
+	s.mux.HandleFunc("GET /admin/api/secrets", s.authMiddleware(s.handleListSecrets))
+	s.mux.HandleFunc("POST /admin/api/secrets", s.authMiddleware(s.handleSetSecret))
+	s.mux.HandleFunc("DELETE /admin/api/secrets/{provider}", s.authMiddleware(s.handleDeleteSecret))
 
 	// Serve the React SPA for all other /admin routes
 	s.mux.Handle("GET /admin/", spaHandler())
@@ -344,32 +362,139 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleProviderStatus(w http.ResponseWriter, _ *http.Request) {
-	providers := []map[string]any{}
-	if s.config.Providers.Anthropic != nil && s.config.Providers.Anthropic.APIKey != "" {
-		providers = append(providers, map[string]any{
-			"name":      "anthropic",
-			"model":     s.config.Providers.Anthropic.Model,
-			"configured": true,
-			"is_default": s.config.Providers.Default == "anthropic",
+	if s.registry != nil {
+		infos := s.registry.List()
+		result := make([]map[string]any, 0, len(infos))
+		for _, info := range infos {
+			result = append(result, map[string]any{
+				"name":       info.Name,
+				"model":      info.Model,
+				"healthy":    info.Healthy,
+				"configured": true,
+				"is_default": info.Name == s.registry.FallbackName(),
+			})
+		}
+		s.jsonOK(w, result)
+		return
+	}
+	s.jsonOK(w, []any{})
+}
+
+func (s *Server) handleListProviders(w http.ResponseWriter, _ *http.Request) {
+	if s.registry == nil {
+		s.jsonOK(w, []any{})
+		return
+	}
+	infos := s.registry.List()
+	result := make([]map[string]any, 0, len(infos))
+	for _, info := range infos {
+		result = append(result, map[string]any{
+			"name":       info.Name,
+			"model":      info.Model,
+			"healthy":    info.Healthy,
+			"is_default": info.Name == s.registry.FallbackName(),
 		})
 	}
-	if s.config.Providers.OpenAI != nil && s.config.Providers.OpenAI.APIKey != "" {
-		providers = append(providers, map[string]any{
-			"name":      "openai",
-			"model":     s.config.Providers.OpenAI.Model,
-			"configured": true,
-			"is_default": s.config.Providers.Default == "openai",
-		})
+	s.jsonOK(w, result)
+}
+
+func (s *Server) handleListRoutes(w http.ResponseWriter, _ *http.Request) {
+	if s.registry == nil {
+		s.jsonOK(w, []any{})
+		return
 	}
-	if s.config.Providers.Gradient != nil && s.config.Providers.Gradient.APIKey != "" {
-		providers = append(providers, map[string]any{
-			"name":      "gradient",
-			"model":     s.config.Providers.Gradient.Model,
-			"configured": true,
-			"is_default": s.config.Providers.Default == "gradient",
-		})
+	s.jsonOK(w, s.registry.Routes())
+}
+
+func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
+	if s.registry == nil {
+		s.jsonError(w, "provider registry not configured", http.StatusNotFound)
+		return
 	}
-	s.jsonOK(w, providers)
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	var route providers.Route
+	if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
+		s.jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if route.Provider == "" {
+		s.jsonError(w, "provider is required", http.StatusBadRequest)
+		return
+	}
+	if _, ok := s.registry.Get(route.Provider); !ok {
+		s.jsonError(w, fmt.Sprintf("unknown provider: %s", route.Provider), http.StatusBadRequest)
+		return
+	}
+
+	routes := s.registry.Routes()
+	routes = append(routes, route)
+	s.registry.UpdateRoutes(routes)
+	s.logger.Info("route created", "channel", route.ChannelID, "provider", route.Provider, "priority", route.Priority)
+	w.WriteHeader(http.StatusCreated)
+	s.jsonOK(w, route)
+}
+
+func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
+	if s.registry == nil {
+		s.jsonError(w, "provider registry not configured", http.StatusNotFound)
+		return
+	}
+	var index int
+	if _, err := fmt.Sscanf(r.PathValue("index"), "%d", &index); err != nil {
+		s.jsonError(w, "invalid index", http.StatusBadRequest)
+		return
+	}
+
+	routes := s.registry.Routes()
+	if index < 0 || index >= len(routes) {
+		s.jsonError(w, "route not found", http.StatusNotFound)
+		return
+	}
+
+	routes = append(routes[:index], routes[index+1:]...)
+	s.registry.UpdateRoutes(routes)
+	s.logger.Info("route deleted", "index", index)
+	s.jsonOK(w, map[string]string{"status": "deleted"})
+}
+
+type testRouteRequest struct {
+	UserID    string `json:"user_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+func (s *Server) handleTestRoute(w http.ResponseWriter, r *http.Request) {
+	if s.registry == nil {
+		s.jsonError(w, "provider registry not configured", http.StatusNotFound)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	var req testRouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	p := s.registry.Resolve(req.UserID, req.ChannelID)
+	if p == nil {
+		s.jsonOK(w, map[string]any{
+			"resolved":  false,
+			"provider":  nil,
+			"user_id":   req.UserID,
+			"channel_id": req.ChannelID,
+		})
+		return
+	}
+
+	overrideName, _, hasOverride := s.registry.GetUserOverride(req.UserID)
+	s.jsonOK(w, map[string]any{
+		"resolved":      true,
+		"provider":      p.Name(),
+		"model":         p.ModelID(),
+		"user_id":       req.UserID,
+		"channel_id":    req.ChannelID,
+		"has_override":  hasOverride,
+		"override_name": overrideName,
+	})
 }
 
 func (s *Server) handleRateLimitStatus(w http.ResponseWriter, _ *http.Request) {

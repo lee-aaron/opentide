@@ -12,6 +12,7 @@ import { AuditPage } from '@/pages/AuditPage'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { SecurityPage } from '@/pages/SecurityPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { ProvidersPage } from '@/pages/ProvidersPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -63,6 +64,7 @@ export default function App() {
                     <Route path="audit" element={<AuditPage />} />
                     <Route path="approvals" element={<ApprovalsPage />} />
                     <Route path="security" element={<SecurityPage />} />
+                    <Route path="providers" element={<ProvidersPage />} />
                     <Route path="settings" element={<SettingsPage />} />
                   </Route>
                 </Routes>

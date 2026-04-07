@@ -95,4 +95,30 @@ export const api = {
   // Config
   getConfig: () => request<import('./types').GatewayConfig>('/config'),
   getProviders: () => request<import('./types').ProviderInfo[]>('/config/providers'),
+
+  // Provider routing
+  listProviders: () => request<import('./types').ProviderInfo[]>('/providers'),
+  listRoutes: () => request<import('./types').ProviderRoute[]>('/providers/routes'),
+  createRoute: (route: import('./types').ProviderRoute) =>
+    request<import('./types').ProviderRoute>('/providers/routes', {
+      method: 'POST',
+      body: JSON.stringify(route),
+    }),
+  deleteRoute: (index: number) =>
+    request<{ status: string }>(`/providers/routes/${index}`, { method: 'DELETE' }),
+  testRoute: (userID: string, channelID: string) =>
+    request<import('./types').TestRouteResult>('/providers/test-route', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userID, channel_id: channelID }),
+    }),
+
+  // Secrets (API key management)
+  listSecrets: () => request<import('./types').SecretMeta[]>('/secrets'),
+  setSecret: (req: import('./types').SetSecretRequest) =>
+    request<import('./types').SecretMeta>('/secrets', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  deleteSecret: (provider: string) =>
+    request<{ status: string }>(`/secrets/${provider}`, { method: 'DELETE' }),
 }

@@ -32,6 +32,16 @@ type ProvidersConfig struct {
 	Anthropic *AnthropicConfig `yaml:"anthropic,omitempty"`
 	OpenAI    *OpenAIConfig    `yaml:"openai,omitempty"`
 	Gradient  *GradientConfig  `yaml:"gradient,omitempty"`
+	Routes    []RouteConfig    `yaml:"routes,omitempty"`
+}
+
+// RouteConfig is the YAML representation of a provider route.
+type RouteConfig struct {
+	ChannelID string `yaml:"channel_id,omitempty"`
+	TenantID  string `yaml:"tenant_id,omitempty"`
+	Provider  string `yaml:"provider"`
+	Model     string `yaml:"model,omitempty"`
+	Priority  int    `yaml:"priority"`
 }
 
 type AnthropicConfig struct {

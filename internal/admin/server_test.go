@@ -24,7 +24,7 @@ func testServer() (*Server, *httptest.Server) {
 		Gateway:  config.GatewayConfig{DemoMode: true},
 		Security: config.SecurityConfig{AdminSecret: "test-secret"},
 	}
-	srv := NewServer(tenants, nil, approvals, rateLimiter, cfg, slog.Default())
+	srv := NewServer(tenants, nil, approvals, rateLimiter, nil, nil, cfg, slog.Default())
 	ts := httptest.NewServer(srv.Handler())
 	return srv, ts
 }
@@ -159,7 +159,7 @@ func testAuthServer() (*Server, *httptest.Server) {
 		Gateway:  config.GatewayConfig{DemoMode: false},
 		Security: config.SecurityConfig{AdminSecret: "test-secret-key"},
 	}
-	srv := NewServer(tenants, nil, approvals, rateLimiter, cfg, slog.Default())
+	srv := NewServer(tenants, nil, approvals, rateLimiter, nil, nil, cfg, slog.Default())
 	ts := httptest.NewServer(srv.Handler())
 	return srv, ts
 }

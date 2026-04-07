@@ -28,6 +28,8 @@ func main() {
 		cmdStatus()
 	case "version":
 		fmt.Printf("tide-cli v%s\n", version)
+	case "admin":
+		cmdAdmin()
 	case "config":
 		if len(os.Args) > 2 && os.Args[2] == "validate" {
 			cmdConfigValidate()
@@ -55,6 +57,7 @@ Commands:
   run               Start the OpenTide gateway (shortcut for 'go run ./cmd/opentide')
   status            Show current configuration and connection status
   config validate   Validate the configuration file
+  skill new         Scaffold a new skill (creates skill.yaml, main.go, Dockerfile)
   skill list        List skills found in the skills/ directory
   skill verify      Verify a signed skill manifest
   skill sign        Sign a skill manifest (requires private key)
@@ -62,6 +65,7 @@ Commands:
   skill publish     Publish a signed skill to the registry
   skill search      Search the skill registry
   skill install     Install a skill from the registry
+  admin secret      Generate a random admin secret
   version           Show version
 
 Flags:

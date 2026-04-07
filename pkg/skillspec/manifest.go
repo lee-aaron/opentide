@@ -14,15 +14,16 @@ import (
 
 // Manifest is the skill.yaml file that ships with every skill.
 type Manifest struct {
-	Name        string   `yaml:"name"`
-	Version     string   `yaml:"version"`
-	Description string   `yaml:"description"`
-	Author      string   `yaml:"author"`
-	License     string   `yaml:"license,omitempty"`
-	Security    Security `yaml:"security"`
-	Triggers    Triggers `yaml:"triggers,omitempty"`
-	Config      []ConfigVar `yaml:"config,omitempty"`
-	Runtime     Runtime  `yaml:"runtime"`
+	Name                 string   `yaml:"name"`
+	Version              string   `yaml:"version"`
+	Description          string   `yaml:"description"`
+	Author               string   `yaml:"author"`
+	License              string   `yaml:"license,omitempty"`
+	Security             Security `yaml:"security"`
+	PlatformRequirements []string `yaml:"platform_requirements,omitempty"` // e.g. ["docker"]
+	Triggers             Triggers `yaml:"triggers,omitempty"`
+	Config               []ConfigVar `yaml:"config,omitempty"`
+	Runtime              Runtime  `yaml:"runtime"`
 }
 
 // Security declares the skill's security requirements.

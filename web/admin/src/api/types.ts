@@ -114,5 +114,45 @@ export interface ProviderInfo {
   name: string
   model: string
   configured: boolean
+  healthy: boolean
   is_default: boolean
+}
+
+export interface ProviderRoute {
+  channel_id?: string
+  tenant_id?: string
+  provider: string
+  model?: string
+  priority: number
+  security?: RoutePolicy
+}
+
+export interface RoutePolicy {
+  max_tokens_per_request?: number
+  audit_verbosity?: string
+}
+
+export interface TestRouteResult {
+  resolved: boolean
+  provider?: string
+  model?: string
+  user_id: string
+  channel_id: string
+  has_override?: boolean
+  override_name?: string
+}
+
+export interface SecretMeta {
+  provider: string
+  last4: string
+  created_at: string
+  source: 'env' | 'store'
+  configured: boolean
+}
+
+export interface SetSecretRequest {
+  provider: string
+  api_key: string
+  model?: string
+  base_url?: string
 }

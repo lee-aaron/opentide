@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -20,7 +21,7 @@ const maxMessageSize = 65536 // 64KB
 
 // Gateway is the core message processing loop.
 type Gateway struct {
-	provider    providers.Provider
+	registry    *providers.Registry
 	adapter     adapters.Adapter
 	store       state.Store
 	approval    *approval.MemoryEngine
@@ -39,7 +40,12 @@ func (g *Gateway) Run(ctx context.Context) error {
 		return fmt.Errorf("receive messages: %w", err)
 	}
 
-	g.logger.Info("gateway started", "provider", g.provider.Name(), "model", g.provider.ModelID())
+	defaultProvider := g.registry.Default()
+	if defaultProvider != nil {
+		g.logger.Info("gateway started", "provider", defaultProvider.Name(), "model", defaultProvider.ModelID())
+	} else {
+		g.logger.Info("gateway started", "provider", "none")
+	}
 
 	for {
 		select {
@@ -86,6 +92,23 @@ func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessag
 		return
 	}
 
+	// Handle /model command before LLM call
+	if handled := g.handleModelCommand(ctx, msg); handled {
+		return
+	}
+
+	// Resolve provider for this message (user override > channel route > default)
+	provider := g.registry.Resolve(msg.UserID, msg.ChannelID)
+	if provider == nil {
+		g.logger.Error("no provider available")
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+			Content: "No LLM provider is configured. Please set up a provider.",
+		})
+		return
+	}
+	g.logger.Debug("provider resolved", "provider", provider.Name(), "model", provider.ModelID(),
+		"user", msg.UserID, "channel", msg.ChannelID)
+
 	// Save incoming message
 	g.store.SaveMessage(ctx, state.ConversationEntry{
 		Timestamp: time.Now(),
@@ -113,10 +136,10 @@ func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessag
 	// Build tool definitions from loaded skills
 	tools := g.buildToolDefs(ctx)
 
-	// Call LLM
-	resp, err := g.provider.Chat(ctx, chatMsgs, tools)
+	// Call LLM (pinned provider for entire message handling)
+	resp, err := provider.Chat(ctx, chatMsgs, tools)
 	if err != nil {
-		g.logger.Error("LLM request failed", "err", err, "provider", g.provider.Name())
+		g.logger.Error("LLM request failed", "err", err, "provider", provider.Name())
 		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
 			Content: "Sorry, I encountered an error processing your message. Please try again.",
 		})
@@ -125,7 +148,7 @@ func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessag
 
 	// Handle tool calls (skill invocations)
 	if len(resp.ToolCalls) > 0 {
-		g.handleToolCalls(ctx, msg, chatMsgs, resp)
+		g.handleToolCalls(ctx, msg, chatMsgs, resp, provider)
 		return
 	}
 
@@ -144,6 +167,89 @@ func (g *Gateway) handleMessage(ctx context.Context, msg adapters.IncomingMessag
 	if err := g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{Content: resp.Content}); err != nil {
 		g.logger.Error("failed to send response", "err", err)
 	}
+}
+
+// handleModelCommand processes /model commands for runtime provider switching.
+// Returns true if the message was a /model command and was handled.
+func (g *Gateway) handleModelCommand(ctx context.Context, msg adapters.IncomingMessage) bool {
+	if len(msg.Content) < 6 || msg.Content[:6] != "/model" {
+		return false
+	}
+
+	parts := strings.Fields(msg.Content)
+	if len(parts) == 1 {
+		// /model — show current provider and available providers
+		current := g.registry.Resolve(msg.UserID, msg.ChannelID)
+		var currentName string
+		if current != nil {
+			currentName = fmt.Sprintf("%s (%s)", current.Name(), current.ModelID())
+		} else {
+			currentName = "none"
+		}
+
+		overrideName, overrideModel, hasOverride := g.registry.GetUserOverride(msg.UserID)
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("**Current provider:** %s\n", currentName))
+		if hasOverride {
+			sb.WriteString(fmt.Sprintf("**User override:** %s", overrideName))
+			if overrideModel != "" {
+				sb.WriteString(fmt.Sprintf(" (%s)", overrideModel))
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n**Available providers:**\n")
+		for _, info := range g.registry.List() {
+			marker := " "
+			if current != nil && info.Name == current.Name() {
+				marker = "→"
+			}
+			sb.WriteString(fmt.Sprintf("%s %s (%s)\n", marker, info.Name, info.Model))
+		}
+		sb.WriteString("\nUsage: `/model <provider> [model]` or `/model reset`")
+
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{Content: sb.String()})
+		return true
+	}
+
+	if parts[1] == "reset" {
+		g.registry.ClearUserOverride(msg.UserID)
+		defaultProvider := g.registry.Resolve(msg.UserID, msg.ChannelID)
+		var name string
+		if defaultProvider != nil {
+			name = defaultProvider.Name()
+		}
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+			Content: fmt.Sprintf("Model override cleared. Using default: **%s**", name),
+		})
+		return true
+	}
+
+	// /model <provider> [model]
+	providerName := parts[1]
+	var model string
+	if len(parts) >= 3 {
+		model = parts[2]
+	}
+
+	if ok := g.registry.SetUserOverride(msg.UserID, providerName, model); !ok {
+		available := make([]string, 0)
+		for _, info := range g.registry.List() {
+			available = append(available, info.Name)
+		}
+		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{
+			Content: fmt.Sprintf("Unknown provider **%s**. Available: %s", providerName, strings.Join(available, ", ")),
+		})
+		return true
+	}
+
+	resp := fmt.Sprintf("Switched to **%s**", providerName)
+	if model != "" {
+		resp += fmt.Sprintf(" (%s)", model)
+	}
+	resp += ". Override lasts 24h or until `/model reset`."
+	g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{Content: resp})
+	return true
 }
 
 // buildToolDefs converts loaded skills into LLM tool definitions.
@@ -179,7 +285,7 @@ func (g *Gateway) buildToolDefs(ctx context.Context) []providers.Tool {
 
 // handleToolCalls processes LLM tool call requests by invoking skills,
 // then feeds results back to the LLM for a final response.
-func (g *Gateway) handleToolCalls(ctx context.Context, msg adapters.IncomingMessage, chatMsgs []providers.ChatMessage, resp *providers.Response) {
+func (g *Gateway) handleToolCalls(ctx context.Context, msg adapters.IncomingMessage, chatMsgs []providers.ChatMessage, resp *providers.Response, provider providers.Provider) {
 	// Add assistant message with tool calls to context
 	chatMsgs = append(chatMsgs, providers.ChatMessage{
 		Role:    providers.RoleAssistant,
@@ -224,7 +330,7 @@ func (g *Gateway) handleToolCalls(ctx context.Context, msg adapters.IncomingMess
 	}
 
 	// Call LLM again with tool results for final response
-	finalResp, err := g.provider.Chat(ctx, chatMsgs, nil)
+	finalResp, err := provider.Chat(ctx, chatMsgs, nil)
 	if err != nil {
 		g.logger.Error("LLM follow-up failed", "err", err)
 		g.adapter.SendMessage(ctx, msg.ChannelID, adapters.Message{

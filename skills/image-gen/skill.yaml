@@ -1,0 +1,27 @@
+name: image-gen
+version: 0.1.0
+description: Generate images using OpenAI DALL-E API
+author: opentide
+license: Apache-2.0
+
+security:
+  egress:
+    - "api.openai.com:443"
+  filesystem: read-only
+  max_memory: 128Mi
+  max_cpu: "0.5"
+  timeout: 60s
+
+triggers:
+  tool_name: image_gen
+  keywords:
+    - generate image
+    - create image
+    - draw
+    - dalle
+    - picture
+
+runtime:
+  image: opentide/skill-image-gen:0.1.0
+  dockerfile: Dockerfile
+  entrypoint: /skill

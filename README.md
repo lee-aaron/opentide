@@ -19,7 +19,8 @@ OpenClaw has 156 security advisories. NemoClaw bolts security onto a broken foun
 
 ```bash
 git clone https://github.com/opentide/opentide.git && cd opentide
-export ANTHROPIC_API_KEY=sk-ant-your-key  # or OPENAI_API_KEY, or DO_GRADIENT_API_KEY
+export OPENTIDE_ADMIN_SECRET=$(go run ./cmd/tide-cli admin secret 2>/dev/null)
+export ANTHROPIC_API_KEY=sk-ant-your-key  # or add via admin UI after startup
 go run ./cmd/opentide --demo
 ```
 
@@ -31,15 +32,74 @@ export DISCORD_TOKEN=your-bot-token
 go run ./cmd/opentide
 ```
 
+## Multi-Provider Routing
+
+Use multiple LLM providers simultaneously. Route by channel, switch mid-conversation:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-your-key
+export OPENAI_API_KEY=sk-your-key
+go run ./cmd/opentide --demo
+```
+
+Users switch providers in chat with `/model anthropic`, `/model openai`, `/model reset`.
+
+Configure channel-based routing in `opentide.yaml` so #engineering uses Claude while #general uses GPT-4o. See [Provider Routing](docs/provider-routing.md).
+
+## 10 Built-in Skills
+
+Every skill runs in an isolated container with declared security constraints. No host process execution.
+
+| Skill | What it does | Network access |
+|-------|-------------|----------------|
+| web-search | Brave Search API | `api.brave.com:443` |
+| calculator | Math expressions | None |
+| file-manager | Sandboxed file I/O | None |
+| text-tools | Case, count, trim, replace | None |
+| json-tools | Validate, format, query | None |
+| reminder | Time-based reminders | None |
+| url-fetch | Fetch URLs (SSRF-protected) | `*:443` |
+| github | Issues, PRs, commits (read-only) | `api.github.com:443` |
+| image-gen | DALL-E 3 image generation | `api.openai.com:443` |
+| code-runner | Python/JS/Go sandbox | None (`--network=none`) |
+
+Scaffold a new skill: `tide-cli skill new my-skill`
+
+See the full [Skills Catalog](docs/skills-catalog.md).
+
+## Admin Dashboard
+
+Security control plane at `http://localhost:8080/admin/`:
+
+- Live security event feed (approvals, denials, TOCTOU mismatches)
+- Audit log with side-by-side payload diffs
+- Egress posture visualization per skill
+- Provider routing management
+- Approval policy configuration
+
+```bash
+export OPENTIDE_ADMIN_SECRET=$(tide-cli admin secret)
+go run ./cmd/opentide
+# Open http://localhost:8080/admin/
+```
+
 ## Deploy to DigitalOcean
 
 ```bash
 doctl apps create --spec deploy/app-platform/app.yaml
 ```
 
+Set env vars in the DO dashboard: `OPENTIDE_ADMIN_SECRET` and `DISCORD_TOKEN` (or `SLACK_BOT_TOKEN`). LLM API keys can be set as env vars or added after deploy via the admin UI.
+
+Managed Postgres is included in the app spec. `DATABASE_URL` is auto-injected.
+
+**Note:** The code-runner skill requires Docker socket access and is not available on DO App Platform. It works on Droplets and self-hosted deployments. All other skills work everywhere.
+
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
+- [Provider Routing](docs/provider-routing.md)
+- [Skills Catalog](docs/skills-catalog.md)
 - [Security Model](docs/security-model.md) (coming soon)
 
 ## License
