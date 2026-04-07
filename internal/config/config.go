@@ -214,20 +214,20 @@ func applyEnvOverrides(cfg *Config) {
 }
 
 func validate(cfg *Config) error {
-	// In demo mode, we only need an LLM provider API key
+	// In demo mode, we need either an LLM provider key or an admin secret (to add keys via UI)
 	if cfg.Gateway.DemoMode {
-		if !hasAnyProvider(cfg) {
-			return oerr.New(oerr.CodeConfigEnvEmpty, "demo mode requires at least one LLM provider API key").
-				WithFix("Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or DO_GRADIENT_API_KEY environment variable").
+		if !hasAnyProvider(cfg) && cfg.Security.AdminSecret == "" {
+			return oerr.New(oerr.CodeConfigEnvEmpty, "demo mode requires an LLM provider key or OPENTIDE_ADMIN_SECRET").
+				WithFix("Set ANTHROPIC_API_KEY (or another provider key), or set OPENTIDE_ADMIN_SECRET to add keys via the admin UI").
 				WithDocs("https://github.com/opentide/opentide/blob/main/docs/getting-started.md")
 		}
 		return nil
 	}
 
-	// Full mode requires a provider and at least one adapter
-	if !hasAnyProvider(cfg) {
+	// Full mode: allow starting without provider keys if admin secret is set (keys can be added via UI)
+	if !hasAnyProvider(cfg) && cfg.Security.AdminSecret == "" {
 		return oerr.New(oerr.CodeConfigEnvEmpty, "no LLM provider configured").
-			WithFix("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or DO_GRADIENT_API_KEY").
+			WithFix("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or MODEL_ACCESS_KEY. Or set OPENTIDE_ADMIN_SECRET to add keys via the admin UI.").
 			WithDocs("https://github.com/opentide/opentide/blob/main/docs/getting-started.md")
 	}
 
