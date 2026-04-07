@@ -141,8 +141,14 @@ func main() {
 		var err error
 		adapter, err = initAdapter(cfg, logger)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			// If no adapter but admin secret is set, run in admin-only mode
+			if cfg.Security.AdminSecret != "" {
+				logger.Warn("no messaging adapter configured, running admin UI only")
+				logger.Warn("add DISCORD_TOKEN or SLACK_BOT_TOKEN to enable messaging")
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -206,21 +212,25 @@ func main() {
 	// Start registry cleanup goroutine (reaps expired user overrides)
 	registry.StartCleanup(ctx)
 
-	// Gateway (messaging adapters + LLM)
-	gw := &Gateway{
-		registry:    registry,
-		adapter:     adapter,
-		store:       store,
-		memory:      memoryStore,
-		approval:    approvalEngine,
-		skills:      skillEngine,
-		rateLimiter: rateLimiter,
-		logger:      logger,
-	}
+	// Gateway (messaging adapters + LLM) — only start if an adapter is configured
+	if adapter != nil {
+		gw := &Gateway{
+			registry:    registry,
+			adapter:     adapter,
+			store:       store,
+			memory:      memoryStore,
+			approval:    approvalEngine,
+			skills:      skillEngine,
+			rateLimiter: rateLimiter,
+			logger:      logger,
+		}
 
-	g.Go(func() error {
-		return gw.Run(ctx)
-	})
+		g.Go(func() error {
+			return gw.Run(ctx)
+		})
+	} else {
+		logger.Info("admin-only mode: admin UI available at http://" + adminAddr + "/admin/")
+	}
 
 	if err := g.Wait(); err != nil {
 		logger.Error("shutdown", "err", err)

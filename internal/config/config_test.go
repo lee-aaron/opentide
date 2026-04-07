@@ -60,7 +60,7 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 }
 
-func TestLoad_NoAdapterInFullMode(t *testing.T) {
+func TestLoad_NoAdapterWithAdminSecret(t *testing.T) {
 	os.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 	os.Setenv("OPENTIDE_ADMIN_SECRET", "test-secret")
 	os.Unsetenv("DISCORD_TOKEN")
@@ -70,9 +70,26 @@ func TestLoad_NoAdapterInFullMode(t *testing.T) {
 	defer os.Unsetenv("ANTHROPIC_API_KEY")
 	defer os.Unsetenv("OPENTIDE_ADMIN_SECRET")
 
+	// Admin secret allows starting without adapters (admin-only mode)
+	_, err := Load("")
+	if err != nil {
+		t.Fatalf("expected no error with admin secret set, got: %v", err)
+	}
+}
+
+func TestLoad_NoAdapterNoAdminSecret(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	os.Unsetenv("OPENTIDE_ADMIN_SECRET")
+	os.Unsetenv("DISCORD_TOKEN")
+	os.Unsetenv("TELEGRAM_TOKEN")
+	os.Unsetenv("SLACK_BOT_TOKEN")
+	os.Unsetenv("OPENTIDE_DEMO")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	// Without admin secret, missing adapter is an error
 	_, err := Load("")
 	if err == nil {
-		t.Fatal("expected error for missing adapter in full mode")
+		t.Fatal("expected error for missing adapter without admin secret")
 	}
 }
 

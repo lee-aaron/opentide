@@ -238,6 +238,10 @@ func validate(cfg *Config) error {
 	}
 
 	if cfg.Adapters.Discord == nil && cfg.Adapters.Telegram == nil && cfg.Adapters.Slack == nil {
+		// Allow starting without adapters if admin secret is set (admin UI only mode)
+		if cfg.Security.AdminSecret != "" {
+			return nil
+		}
 		return oerr.New(oerr.CodeConfigEnvEmpty, "no messaging adapter configured").
 			WithFix("Set DISCORD_TOKEN, TELEGRAM_TOKEN, or SLACK_BOT_TOKEN environment variable").
 			WithDocs("https://github.com/opentide/opentide/blob/main/docs/getting-started.md")
