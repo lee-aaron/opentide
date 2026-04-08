@@ -44,6 +44,8 @@ export const api = {
     request<{ status: string }>('/logout', { method: 'POST' }),
   me: () =>
     request<{ authenticated: boolean; demo?: boolean }>('/me'),
+  authConfig: () =>
+    request<{ google_enabled: boolean; secret_enabled: boolean; demo_mode: boolean }>('/auth/config'),
 
   // Dashboard
   status: () => request<import('./types').StatusResponse>('/status'),

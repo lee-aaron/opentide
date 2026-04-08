@@ -33,6 +33,7 @@ type Server struct {
 	logger      *slog.Logger
 	mux         *http.ServeMux
 	startTime   time.Time
+	oauthStates *oauthStateStore
 }
 
 // NewServer creates an admin dashboard server.
@@ -48,6 +49,7 @@ func NewServer(tenants tenant.Store, skillEngine skills.Engine, approvals *appro
 		logger:      logger,
 		mux:         http.NewServeMux(),
 		startTime:   time.Now(),
+		oauthStates: newOAuthStateStore(),
 	}
 	s.routes()
 	return s
@@ -61,6 +63,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/api/login", s.handleLogin)
 	s.mux.HandleFunc("POST /admin/api/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /admin/api/me", s.handleMe)
+	s.mux.HandleFunc("GET /admin/api/auth/config", s.handleAuthConfig)
+
+	// Google OAuth (no middleware, redirect-based)
+	s.mux.HandleFunc("GET /admin/api/auth/google", s.handleGoogleLogin)
+	s.mux.HandleFunc("GET /admin/api/auth/google/callback", s.handleGoogleCallback)
 
 	// Health (no auth)
 	s.mux.HandleFunc("GET /admin/health", s.handleHealth)

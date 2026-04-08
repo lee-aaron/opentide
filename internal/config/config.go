@@ -92,6 +92,10 @@ type SecurityConfig struct {
 	ApprovalTTL    int    `yaml:"approval_ttl"`     // seconds, default 300
 	AdminSecret    string `yaml:"admin_secret"`     // required in non-demo mode
 	AdminPort      int    `yaml:"admin_port"`       // default 8080
+	// Google OAuth for admin login (optional, falls back to admin secret)
+	GoogleClientID     string `yaml:"google_client_id,omitempty"`
+	GoogleClientSecret string `yaml:"google_client_secret,omitempty"`
+	AdminEmails        string `yaml:"admin_emails,omitempty"` // comma-separated allowed emails
 }
 
 // Load reads config from a YAML file, with environment variable overrides.
@@ -210,6 +214,15 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("OPENTIDE_ADMIN_SECRET"); v != "" {
 		cfg.Security.AdminSecret = v
+	}
+	if v := os.Getenv("GOOGLE_CLIENT_ID"); v != "" {
+		cfg.Security.GoogleClientID = v
+	}
+	if v := os.Getenv("GOOGLE_CLIENT_SECRET"); v != "" {
+		cfg.Security.GoogleClientSecret = v
+	}
+	if v := os.Getenv("OPENTIDE_ADMIN_EMAILS"); v != "" {
+		cfg.Security.AdminEmails = v
 	}
 }
 
