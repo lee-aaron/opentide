@@ -39,6 +39,16 @@ services:
       - key: OPENTIDE_ADMIN_SECRET
         scope: RUN_TIME
         type: SECRET
+      # Google OAuth for admin login (optional, replaces admin secret)
+      - key: GOOGLE_CLIENT_ID
+        scope: RUN_TIME
+        type: SECRET
+      - key: GOOGLE_CLIENT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: OPENTIDE_ADMIN_EMAILS
+        scope: RUN_TIME
+        type: SECRET
       # LLM providers (optional at deploy time, can be added via admin UI)
       - key: ANTHROPIC_API_KEY
         scope: RUN_TIME
