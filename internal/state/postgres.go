@@ -19,8 +19,18 @@ type PostgresStore struct {
 
 // ConnectPool creates a connection pool, verifies connectivity, and runs migrations.
 // The returned pool can be shared across components (state store, secrets store, etc.).
+// It creates an "opentide" schema to avoid permission issues on managed Postgres (PG15+
+// restricts CREATE on the public schema for non-superusers).
 func ConnectPool(ctx context.Context, dsn string, logger *slog.Logger) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("postgres parse config: %w", err)
+	}
+
+	// Set search_path on every connection so all queries use the opentide schema.
+	poolCfg.ConnConfig.RuntimeParams["search_path"] = "opentide,public"
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("postgres connect: %w", err)
 	}
@@ -28,6 +38,13 @@ func ConnectPool(ctx context.Context, dsn string, logger *slog.Logger) (*pgxpool
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("postgres ping: %w", err)
+	}
+
+	// Create the opentide schema (needs to happen before migrations).
+	// This uses a one-off connection without search_path restrictions.
+	if _, err := pool.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS opentide`); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("create opentide schema: %w", err)
 	}
 
 	if err := Migrate(ctx, pool, logger); err != nil {
