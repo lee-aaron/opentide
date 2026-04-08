@@ -229,30 +229,32 @@ func applyEnvOverrides(cfg *Config) {
 func validate(cfg *Config) error {
 	// In demo mode, we need either an LLM provider key or an admin secret (to add keys via UI)
 	if cfg.Gateway.DemoMode {
-		if !hasAnyProvider(cfg) && cfg.Security.AdminSecret == "" {
-			return oerr.New(oerr.CodeConfigEnvEmpty, "demo mode requires an LLM provider key or OPENTIDE_ADMIN_SECRET").
-				WithFix("Set ANTHROPIC_API_KEY (or another provider key), or set OPENTIDE_ADMIN_SECRET to add keys via the admin UI").
+		if !hasAnyProvider(cfg) && cfg.Security.AdminSecret == "" && !hasGoogleOAuth(cfg) {
+			return oerr.New(oerr.CodeConfigEnvEmpty, "demo mode requires an LLM provider key or admin authentication").
+				WithFix("Set ANTHROPIC_API_KEY (or another provider key), or set OPENTIDE_ADMIN_SECRET, or configure Google OAuth").
 				WithDocs("https://github.com/opentide/opentide/blob/main/docs/getting-started.md")
 		}
 		return nil
 	}
 
-	// Full mode: allow starting without provider keys if admin secret is set (keys can be added via UI)
-	if !hasAnyProvider(cfg) && cfg.Security.AdminSecret == "" {
+	hasAdminAuth := cfg.Security.AdminSecret != "" || hasGoogleOAuth(cfg)
+
+	// Full mode: allow starting without provider keys if admin auth is configured (keys can be added via UI)
+	if !hasAnyProvider(cfg) && !hasAdminAuth {
 		return oerr.New(oerr.CodeConfigEnvEmpty, "no LLM provider configured").
-			WithFix("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or MODEL_ACCESS_KEY. Or set OPENTIDE_ADMIN_SECRET to add keys via the admin UI.").
+			WithFix("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or MODEL_ACCESS_KEY. Or set OPENTIDE_ADMIN_SECRET (or GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET) to add keys via the admin UI.").
 			WithDocs("https://github.com/opentide/opentide/blob/main/docs/getting-started.md")
 	}
 
-	if cfg.Security.AdminSecret == "" {
-		return oerr.New(oerr.CodeConfigEnvEmpty, "OPENTIDE_ADMIN_SECRET is required in non-demo mode").
-			WithFix("Set OPENTIDE_ADMIN_SECRET environment variable. Generate one with: tide-cli admin secret").
+	if !hasAdminAuth {
+		return oerr.New(oerr.CodeConfigEnvEmpty, "admin authentication is required in non-demo mode").
+			WithFix("Set OPENTIDE_ADMIN_SECRET or configure Google OAuth (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET)").
 			WithDocs("https://github.com/opentide/opentide/blob/main/docs/admin-api.md")
 	}
 
 	if cfg.Adapters.Discord == nil && cfg.Adapters.Telegram == nil && cfg.Adapters.Slack == nil {
-		// Allow starting without adapters if admin secret is set (admin UI only mode)
-		if cfg.Security.AdminSecret != "" {
+		// Allow starting without adapters if admin auth is configured (admin UI only mode)
+		if hasAdminAuth {
 			return nil
 		}
 		return oerr.New(oerr.CodeConfigEnvEmpty, "no messaging adapter configured").
@@ -267,4 +269,8 @@ func hasAnyProvider(cfg *Config) bool {
 	return (cfg.Providers.Anthropic != nil && cfg.Providers.Anthropic.APIKey != "") ||
 		(cfg.Providers.OpenAI != nil && cfg.Providers.OpenAI.APIKey != "") ||
 		(cfg.Providers.Gradient != nil && cfg.Providers.Gradient.APIKey != "")
+}
+
+func hasGoogleOAuth(cfg *Config) bool {
+	return cfg.Security.GoogleClientID != "" && cfg.Security.GoogleClientSecret != ""
 }

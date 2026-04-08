@@ -80,10 +80,15 @@ func main() {
 		}
 	}
 
-	// Initialize encrypted secrets store for API keys
+	// Initialize encrypted secrets store for API keys.
+	// Use admin secret for key derivation, or Google client secret as fallback.
 	var secretStore secrets.Store
-	if cfg.Security.AdminSecret != "" {
-		encKey, err := secrets.DeriveKey(cfg.Security.AdminSecret)
+	keySource := cfg.Security.AdminSecret
+	if keySource == "" {
+		keySource = cfg.Security.GoogleClientSecret
+	}
+	if keySource != "" {
+		encKey, err := secrets.DeriveKey(keySource)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error deriving secrets key: %v\n", err)
 			os.Exit(1)
@@ -345,10 +350,11 @@ func initProviders(cfg *config.Config, secretStore secrets.Store, logger *slog.L
 		}
 	}
 
-	// Allow starting with no providers if admin secret is set (keys can be added via UI).
-	if len(registry.List()) == 0 && cfg.Security.AdminSecret == "" {
+	// Allow starting with no providers if admin auth is configured (keys can be added via UI).
+	hasAdminAuth := cfg.Security.AdminSecret != "" || (cfg.Security.GoogleClientID != "" && cfg.Security.GoogleClientSecret != "")
+	if len(registry.List()) == 0 && !hasAdminAuth {
 		return nil, oerr.New(oerr.CodeProviderAuth, "no LLM provider configured").
-			WithFix("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or MODEL_ACCESS_KEY. Or set OPENTIDE_ADMIN_SECRET to add keys via the admin UI.")
+			WithFix("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or MODEL_ACCESS_KEY. Or configure admin auth to add keys via the admin UI.")
 	}
 
 	// If no explicit default or default not found, auto-detect first available.
