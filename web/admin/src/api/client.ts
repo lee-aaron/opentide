@@ -123,4 +123,30 @@ export const api = {
     }),
   deleteSecret: (provider: string) =>
     request<{ status: string }>(`/secrets/${provider}`, { method: 'DELETE' }),
+
+  // Adapter tokens
+  listAdapterSecrets: () => request<import('./types').SecretMeta[]>('/adapters'),
+  setAdapterSecret: (req: import('./types').SetAdapterSecretRequest) =>
+    request<{ meta: import('./types').SecretMeta; restart_required: boolean }>('/adapters', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  deleteAdapterSecret: (adapter: string) =>
+    request<{ status: string; restart_required: boolean }>(`/adapters/${adapter}`, { method: 'DELETE' }),
+
+  // Models
+  listModels: (provider: string) =>
+    request<import('./types').ModelInfo[]>(`/providers/${provider}/models`),
+  setModel: (provider: string, model: string) =>
+    request<{ status: string; model: string }>(`/providers/${provider}/model`, {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    }),
+
+  // Skill toggle
+  toggleSkill: (toolName: string, enabled: boolean) =>
+    request<{ status: string; tool_name: string }>(`/skills/${encodeURIComponent(toolName)}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
 }

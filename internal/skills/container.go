@@ -20,8 +20,9 @@ import (
 // - CPU and memory limits from manifest
 // - Timeout enforcement
 type ContainerEngine struct {
-	mu     sync.RWMutex
-	skills map[string]*loadedSkill // keyed by tool_name
+	mu       sync.RWMutex
+	skills   map[string]*loadedSkill // keyed by tool_name, active
+	disabled map[string]*loadedSkill // keyed by tool_name, disabled but cached
 
 	egress *EgressController
 }
@@ -34,8 +35,9 @@ type loadedSkill struct {
 // NewContainerEngine creates a skill engine that uses Docker containers.
 func NewContainerEngine() *ContainerEngine {
 	return &ContainerEngine{
-		skills: make(map[string]*loadedSkill),
-		egress: NewEgressController(),
+		skills:   make(map[string]*loadedSkill),
+		disabled: make(map[string]*loadedSkill),
+		egress:   NewEgressController(),
 	}
 }
 
@@ -128,7 +130,7 @@ func (e *ContainerEngine) ListSkills(_ context.Context) ([]Info, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	infos := make([]Info, 0, len(e.skills))
+	infos := make([]Info, 0, len(e.skills)+len(e.disabled))
 	for toolName, skill := range e.skills {
 		infos = append(infos, Info{
 			Name:        skill.manifest.Name,
@@ -137,6 +139,19 @@ func (e *ContainerEngine) ListSkills(_ context.Context) ([]Info, error) {
 			Author:      skill.manifest.Author,
 			ToolName:    toolName,
 			Loaded:      true,
+			Enabled:     true,
+			Security:    securityInfoFromManifest(skill.manifest),
+		})
+	}
+	for toolName, skill := range e.disabled {
+		infos = append(infos, Info{
+			Name:        skill.manifest.Name,
+			Version:     skill.manifest.Version,
+			Description: skill.manifest.Description,
+			Author:      skill.manifest.Author,
+			ToolName:    toolName,
+			Loaded:      false,
+			Enabled:     false,
 			Security:    securityInfoFromManifest(skill.manifest),
 		})
 	}
@@ -151,6 +166,40 @@ func (e *ContainerEngine) UnloadSkill(_ context.Context, toolName string) error 
 		return &SkillNotFoundError{ToolName: toolName}
 	}
 	delete(e.skills, toolName)
+	return nil
+}
+
+func (e *ContainerEngine) DisableSkill(_ context.Context, toolName string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	skill, ok := e.skills[toolName]
+	if !ok {
+		// Already disabled or not loaded
+		if _, disabled := e.disabled[toolName]; disabled {
+			return nil // already disabled, idempotent
+		}
+		return &SkillNotFoundError{ToolName: toolName}
+	}
+	e.disabled[toolName] = skill
+	delete(e.skills, toolName)
+	return nil
+}
+
+func (e *ContainerEngine) EnableSkill(_ context.Context, toolName string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	skill, ok := e.disabled[toolName]
+	if !ok {
+		// Already enabled or not loaded
+		if _, active := e.skills[toolName]; active {
+			return nil // already enabled, idempotent
+		}
+		return &SkillNotFoundError{ToolName: toolName}
+	}
+	e.skills[toolName] = skill
+	delete(e.disabled, toolName)
 	return nil
 }
 

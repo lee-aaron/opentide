@@ -1,10 +1,61 @@
 import { useState } from 'react'
-import { useProviders, useRoutes, useCreateRoute, useDeleteRoute, useTestRoute, useSkills, useSecrets, useSetSecret, useDeleteSecret } from '@/api/hooks'
+import { useProviders, useRoutes, useCreateRoute, useDeleteRoute, useTestRoute, useSkills, useSecrets, useSetSecret, useDeleteSecret, useAdapterSecrets, useSetAdapterSecret, useDeleteAdapterSecret, useModels, useSetModel } from '@/api/hooks'
 import type { ProviderRoute } from '@/api/types'
 
 function HealthBadge({ healthy }: { healthy: boolean }) {
   return (
     <span className={`inline-flex h-2 w-2 rounded-full ${healthy ? 'bg-green-400' : 'bg-red-400'}`} />
+  )
+}
+
+function ModelSelector({ provider, currentModel }: { provider: string; currentModel: string }) {
+  const { data: models, isLoading } = useModels(provider)
+  const setModel = useSetModel()
+  const [open, setOpen] = useState(false)
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-2 text-xs text-slate-500 hover:text-sky-400 transition-colors"
+        title="Click to change model"
+      >
+        {currentModel || 'default model'}
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-2">
+      {isLoading ? (
+        <div className="text-xs text-slate-500">Loading models...</div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <select
+            value={currentModel}
+            onChange={(e) => {
+              setModel.mutate({ provider, model: e.target.value }, {
+                onSuccess: () => setOpen(false),
+              })
+            }}
+            disabled={setModel.isPending}
+            className="flex-1 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+          >
+            {models?.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.display_name || m.id} {m.current ? '(current)' : ''}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setOpen(false)}
+            className="text-xs text-slate-500 hover:text-slate-300"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -27,7 +78,7 @@ function ProviderCards() {
               <span className="rounded bg-sky-500/20 px-2 py-0.5 text-xs text-sky-400">default</span>
             )}
           </div>
-          <div className="mt-2 text-xs text-slate-500">{p.model || 'default model'}</div>
+          <ModelSelector provider={p.name} currentModel={p.model} />
         </div>
       ))}
     </div>
@@ -434,16 +485,142 @@ function SkillDependencies() {
   )
 }
 
+const ADAPTER_LABELS: Record<string, { label: string; placeholder: string; hint: string }> = {
+  discord: { label: 'Discord', placeholder: 'Bot token', hint: 'Developer Portal > Bot > Token' },
+  slack_bot: { label: 'Slack Bot Token', placeholder: 'xoxb-...', hint: 'Slack API > OAuth & Permissions' },
+  slack_app: { label: 'Slack App Token', placeholder: 'xapp-...', hint: 'Slack API > Basic Information > App-Level Tokens' },
+}
+
+function AdapterTokenManager() {
+  const { data: secretsList, isLoading } = useAdapterSecrets()
+  const setSecret = useSetAdapterSecret()
+  const deleteSecretMut = useDeleteAdapterSecret()
+  const [editing, setEditing] = useState<string | null>(null)
+  const [token, setToken] = useState('')
+  const [error, setError] = useState('')
+
+  if (isLoading) return <div className="text-sm text-slate-500">Loading adapter tokens...</div>
+
+  const secretsMap = new Map((secretsList ?? []).map((s) => [s.provider, s]))
+
+  const handleSave = (adapter: string) => {
+    if (!token.trim()) return
+    setError('')
+    setSecret.mutate(
+      { adapter, token: token.trim() },
+      {
+        onSuccess: () => {
+          setEditing(null)
+          setToken('')
+        },
+        onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
+      }
+    )
+  }
+
+  const handleDelete = (adapter: string) => {
+    deleteSecretMut.mutate(adapter)
+  }
+
+  return (
+    <div>
+      <h3 className="mb-3 text-sm font-medium text-slate-300">Messaging Adapters</h3>
+      <div className="mb-3 rounded-lg border border-amber-700/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-400">
+        Adapter token changes require a gateway restart to take effect.
+      </div>
+      <div className="space-y-3">
+        {Object.entries(ADAPTER_LABELS).map(([name, info]) => {
+          const secret = secretsMap.get(name)
+          const isConfigured = secret?.configured
+          const isEnv = secret?.source === 'env'
+          const isEditing = editing === name
+
+          return (
+            <div key={name} className="rounded-lg border border-slate-700 bg-slate-800/50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-slate-200">{info.label}</span>
+                  <span className="ml-2 text-xs text-slate-500">{info.hint}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isConfigured && isEnv && (
+                    <span className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">
+                      via env ****{secret.last4}
+                    </span>
+                  )}
+                  {isConfigured && !isEnv && (
+                    <>
+                      <span className="rounded bg-green-500/20 px-2 py-0.5 text-xs text-green-400">
+                        configured ****{secret.last4}
+                      </span>
+                      <button
+                        onClick={() => handleDelete(name)}
+                        disabled={deleteSecretMut.isPending}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  )}
+                  {!isConfigured && !isEditing && (
+                    <button
+                      onClick={() => { setEditing(name); setToken(''); setError('') }}
+                      className="rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500"
+                    >
+                      Add Token
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {isEditing && (
+                <div className="mt-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      placeholder={info.placeholder}
+                      className="flex-1 rounded border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600"
+                      autoFocus
+                      onKeyDown={(e) => e.key === 'Enter' && handleSave(name)}
+                    />
+                    <button
+                      onClick={() => handleSave(name)}
+                      disabled={!token.trim() || setSecret.isPending}
+                      className="rounded bg-green-600 px-4 py-1.5 text-xs text-white hover:bg-green-500 disabled:opacity-50"
+                    >
+                      {setSecret.isPending ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => { setEditing(null); setToken(''); setError('') }}
+                      className="rounded px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {error && <div className="mt-2 text-xs text-red-400">{error}</div>}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function ProvidersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-slate-100">Providers</h2>
-        <p className="text-sm text-slate-500">Manage LLM providers and routing rules.</p>
+        <h2 className="text-lg font-semibold text-slate-100">Providers & Adapters</h2>
+        <p className="text-sm text-slate-500">Manage LLM providers, messaging adapters, and routing rules.</p>
       </div>
 
       <ApiKeyManager />
       <ProviderCards />
+      <AdapterTokenManager />
       <RouteTable />
       <TestRoutePanel />
       <SkillDependencies />

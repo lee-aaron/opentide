@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Tenant, SetSecretRequest } from './types'
+import type { Tenant, SetSecretRequest, SetAdapterSecretRequest } from './types'
 
 export function useStatus() {
   return useQuery({
@@ -167,5 +167,61 @@ export function useDeleteSecret() {
       qc.invalidateQueries({ queryKey: ['secrets'] })
       qc.invalidateQueries({ queryKey: ['providers'] })
     },
+  })
+}
+
+// Adapter secrets
+export function useAdapterSecrets() {
+  return useQuery({
+    queryKey: ['adapterSecrets'],
+    queryFn: api.listAdapterSecrets,
+    refetchInterval: 30_000,
+  })
+}
+
+export function useSetAdapterSecret() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: SetAdapterSecretRequest) => api.setAdapterSecret(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['adapterSecrets'] }),
+  })
+}
+
+export function useDeleteAdapterSecret() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (adapter: string) => api.deleteAdapterSecret(adapter),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['adapterSecrets'] }),
+  })
+}
+
+// Models
+export function useModels(provider: string) {
+  return useQuery({
+    queryKey: ['models', provider],
+    queryFn: () => api.listModels(provider),
+    enabled: !!provider,
+  })
+}
+
+export function useSetModel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ provider, model }: { provider: string; model: string }) =>
+      api.setModel(provider, model),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['providers'] })
+      qc.invalidateQueries({ queryKey: ['models'] })
+    },
+  })
+}
+
+// Skill toggle
+export function useToggleSkill() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ toolName, enabled }: { toolName: string; enabled: boolean }) =>
+      api.toggleSkill(toolName, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['skills'] }),
   })
 }

@@ -271,6 +271,9 @@ func (g *Gateway) buildToolDefs(ctx context.Context) []providers.Tool {
 
 	tools := make([]providers.Tool, 0, len(infos))
 	for _, info := range infos {
+		if !info.Enabled {
+			continue
+		}
 		tools = append(tools, providers.Tool{
 			Name:        info.ToolName,
 			Description: info.Description,

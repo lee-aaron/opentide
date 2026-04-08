@@ -111,6 +111,18 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/api/secrets", s.authMiddleware(s.handleSetSecret))
 	s.mux.HandleFunc("DELETE /admin/api/secrets/{provider}", s.authMiddleware(s.handleDeleteSecret))
 
+	// Adapter token management (auth required)
+	s.mux.HandleFunc("GET /admin/api/adapters", s.authMiddleware(s.handleListAdapterSecrets))
+	s.mux.HandleFunc("POST /admin/api/adapters", s.authMiddleware(s.handleSetAdapterSecret))
+	s.mux.HandleFunc("DELETE /admin/api/adapters/{adapter}", s.authMiddleware(s.handleDeleteAdapterSecret))
+
+	// Model management (auth required)
+	s.mux.HandleFunc("GET /admin/api/providers/{name}/models", s.authMiddleware(s.handleListModels))
+	s.mux.HandleFunc("POST /admin/api/providers/{name}/model", s.authMiddleware(s.handleSetModel))
+
+	// Skill toggle (auth required)
+	s.mux.HandleFunc("POST /admin/api/skills/{tool_name}/toggle", s.authMiddleware(s.handleToggleSkill))
+
 	// Serve the React SPA for all other /admin routes
 	s.mux.Handle("GET /admin/", spaHandler())
 }

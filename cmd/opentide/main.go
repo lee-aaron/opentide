@@ -102,6 +102,9 @@ func main() {
 		}
 	}
 
+	// Load adapter tokens from secrets store (env vars take precedence)
+	loadAdapterSecrets(cfg, secretStore, logger)
+
 	// Initialize LLM providers (multi-provider registry)
 	registry, err := initProviders(cfg, secretStore, logger)
 	if err != nil {
@@ -170,6 +173,17 @@ func main() {
 
 	// Load skills from skills/ directory
 	loadSkills(skillEngine, "skills", logger)
+
+	// Restore persisted disabled skills
+	if secretStore != nil {
+		for _, toolName := range admin.LoadDisabledSkills(secretStore, context.Background()) {
+			if err := skillEngine.DisableSkill(context.Background(), toolName); err != nil {
+				logger.Debug("could not disable skill at boot", "tool", toolName, "err", err)
+			} else {
+				logger.Info("skill disabled (persisted state)", "tool", toolName)
+			}
+		}
+	}
 
 	// Initialize rate limiter
 	rateLimiter := security.NewRateLimiter(security.DefaultRateLimitConfig())
@@ -426,6 +440,42 @@ func platformAvailable(requirements []string) bool {
 		}
 	}
 	return true
+}
+
+// loadAdapterSecrets checks the secrets store for adapter tokens when env vars are not set.
+func loadAdapterSecrets(cfg *config.Config, store secrets.Store, logger *slog.Logger) {
+	if store == nil {
+		return
+	}
+	ctx := context.Background()
+
+	// Discord
+	if cfg.Adapters.Discord == nil || cfg.Adapters.Discord.Token == "" {
+		if token, err := store.Get(ctx, "discord"); err == nil && token != "" {
+			if cfg.Adapters.Discord == nil {
+				cfg.Adapters.Discord = &config.DiscordConfig{}
+			}
+			cfg.Adapters.Discord.Token = token
+			logger.Info("discord token loaded from secrets store")
+		}
+	}
+
+	// Slack
+	if cfg.Adapters.Slack == nil || cfg.Adapters.Slack.BotToken == "" {
+		if token, err := store.Get(ctx, "slack_bot"); err == nil && token != "" {
+			if cfg.Adapters.Slack == nil {
+				cfg.Adapters.Slack = &config.SlackConfig{}
+			}
+			cfg.Adapters.Slack.BotToken = token
+			logger.Info("slack bot token loaded from secrets store")
+		}
+	}
+	if cfg.Adapters.Slack != nil && cfg.Adapters.Slack.AppToken == "" {
+		if token, err := store.Get(ctx, "slack_app"); err == nil && token != "" {
+			cfg.Adapters.Slack.AppToken = token
+			logger.Info("slack app token loaded from secrets store")
+		}
+	}
 }
 
 func initAdapter(cfg *config.Config, logger *slog.Logger) (adapters.Adapter, error) {

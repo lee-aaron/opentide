@@ -27,6 +27,8 @@ export interface SkillInfo {
   version: string
   description: string
   tool_name: string
+  loaded: boolean
+  enabled: boolean
   security?: SkillSecurity
 }
 
@@ -155,4 +157,15 @@ export interface SetSecretRequest {
   api_key: string
   model?: string
   base_url?: string
+}
+
+export interface SetAdapterSecretRequest {
+  adapter: string
+  token: string
+}
+
+export interface ModelInfo {
+  id: string
+  display_name?: string
+  current: boolean
 }

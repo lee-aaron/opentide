@@ -37,6 +37,7 @@ type Info struct {
 	Author      string         `json:"author"`
 	ToolName    string         `json:"tool_name"`
 	Loaded      bool           `json:"loaded"`
+	Enabled     bool           `json:"enabled"`
 	Security    *SecurityInfo  `json:"security,omitempty"`
 }
 
@@ -62,6 +63,12 @@ type Engine interface {
 
 	// UnloadSkill removes a skill from the engine.
 	UnloadSkill(ctx context.Context, toolName string) error
+
+	// DisableSkill temporarily disables a skill (retains manifest for re-enabling).
+	DisableSkill(ctx context.Context, toolName string) error
+
+	// EnableSkill re-enables a previously disabled skill.
+	EnableSkill(ctx context.Context, toolName string) error
 
 	// Close shuts down the engine and cleans up resources.
 	Close() error

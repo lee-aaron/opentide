@@ -17,8 +17,9 @@ import (
 // No container isolation. Uses process-level resource limits where available.
 // WARNING: Not for production use. Skills have full host access.
 type ProcessEngine struct {
-	mu     sync.RWMutex
-	skills map[string]*processSkill
+	mu       sync.RWMutex
+	skills   map[string]*processSkill
+	disabled map[string]*processSkill
 }
 
 type processSkill struct {
@@ -29,7 +30,8 @@ type processSkill struct {
 // NewProcessEngine creates a skill engine that runs skills as local processes.
 func NewProcessEngine() *ProcessEngine {
 	return &ProcessEngine{
-		skills: make(map[string]*processSkill),
+		skills:   make(map[string]*processSkill),
+		disabled: make(map[string]*processSkill),
 	}
 }
 
@@ -126,7 +128,7 @@ func (e *ProcessEngine) ListSkills(_ context.Context) ([]Info, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	infos := make([]Info, 0, len(e.skills))
+	infos := make([]Info, 0, len(e.skills)+len(e.disabled))
 	for toolName, skill := range e.skills {
 		infos = append(infos, Info{
 			Name:        skill.manifest.Name,
@@ -135,6 +137,19 @@ func (e *ProcessEngine) ListSkills(_ context.Context) ([]Info, error) {
 			Author:      skill.manifest.Author,
 			ToolName:    toolName,
 			Loaded:      true,
+			Enabled:     true,
+			Security:    securityInfoFromManifest(skill.manifest),
+		})
+	}
+	for toolName, skill := range e.disabled {
+		infos = append(infos, Info{
+			Name:        skill.manifest.Name,
+			Version:     skill.manifest.Version,
+			Description: skill.manifest.Description,
+			Author:      skill.manifest.Author,
+			ToolName:    toolName,
+			Loaded:      false,
+			Enabled:     false,
 			Security:    securityInfoFromManifest(skill.manifest),
 		})
 	}
@@ -149,6 +164,38 @@ func (e *ProcessEngine) UnloadSkill(_ context.Context, toolName string) error {
 		return &SkillNotFoundError{ToolName: toolName}
 	}
 	delete(e.skills, toolName)
+	return nil
+}
+
+func (e *ProcessEngine) DisableSkill(_ context.Context, toolName string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	skill, ok := e.skills[toolName]
+	if !ok {
+		if _, disabled := e.disabled[toolName]; disabled {
+			return nil
+		}
+		return &SkillNotFoundError{ToolName: toolName}
+	}
+	e.disabled[toolName] = skill
+	delete(e.skills, toolName)
+	return nil
+}
+
+func (e *ProcessEngine) EnableSkill(_ context.Context, toolName string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	skill, ok := e.disabled[toolName]
+	if !ok {
+		if _, active := e.skills[toolName]; active {
+			return nil
+		}
+		return &SkillNotFoundError{ToolName: toolName}
+	}
+	e.skills[toolName] = skill
+	delete(e.disabled, toolName)
 	return nil
 }
 
