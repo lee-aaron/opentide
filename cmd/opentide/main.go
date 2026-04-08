@@ -148,8 +148,9 @@ func main() {
 		var err error
 		adapter, err = initAdapter(cfg, logger)
 		if err != nil {
-			// If no adapter but admin secret is set, run in admin-only mode
-			if cfg.Security.AdminSecret != "" {
+			// If no adapter but admin auth is set, run in admin-only mode
+			hasAdminAuth := cfg.Security.AdminSecret != "" || (cfg.Security.GoogleClientID != "" && cfg.Security.GoogleClientSecret != "")
+			if hasAdminAuth {
 				logger.Warn("no messaging adapter configured, running admin UI only")
 				logger.Warn("add DISCORD_TOKEN or SLACK_BOT_TOKEN to enable messaging")
 			} else {
