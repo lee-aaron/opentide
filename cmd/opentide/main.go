@@ -71,11 +71,13 @@ func main() {
 	if cfg.State.Driver == "postgres" && cfg.State.PostgresDSN != "" {
 		pool, err := state.ConnectPool(context.Background(), cfg.State.PostgresDSN, logger)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Postgres error: %v\n", err)
-			os.Exit(1)
+			logger.Warn("postgres unavailable, falling back to in-memory state",
+				"err", err,
+				"fix", "use a production database cluster or run 'tide-cli db migrate' with a privileged user")
+		} else {
+			pgPool = pool
+			defer pool.Close()
 		}
-		pgPool = pool
-		defer pool.Close()
 	}
 
 	// Initialize encrypted secrets store for API keys
