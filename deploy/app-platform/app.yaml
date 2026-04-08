@@ -71,5 +71,7 @@ databases:
   - name: opentide-db
     engine: PG
     version: "16"
-    size: db-s-dev-database
+    production: true
+    cluster_name: opentide-db
+    size: db-s-1vcpu-1gb
     num_nodes: 1
